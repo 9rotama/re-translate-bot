@@ -232,7 +232,7 @@ Workers の binding（`env.AI`、`env.DB`）は、`translation/relay.ts` と `se
 | wrangler の指定 | 既定（`--env` なし） | `--env production` |
 | Worker 名 | `re-translate-bot-dev` | `re-translate-bot` |
 | D1 データベース | `re-translate-bot-dev` | `re-translate-bot` |
-| Discord アプリケーション | 以前から使っている開発用アプリ（client ID は確認中） | 現行のアプリ（client ID `981977773277061210`） |
+| Discord アプリケーション | 以前から使っている開発用アプリ（client ID `982084046924439622`） | 現行のアプリ（client ID `981977773277061210`） |
 | Interactions Endpoint URL | 開発用 Worker の `workers.dev` の URL | 本番 Worker の URL |
 
 既定を開発用にするのは、`--env` を付け忘れたときに本番へ配備されないようにするためである。
