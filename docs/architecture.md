@@ -73,7 +73,10 @@ sequenceDiagram
 
 ## 言語とフレームワーク
 
-言語は TypeScript とする。
+言語は TypeScript 7.1 とする。
+7 系はコンパイラを Go で書き直した版で、型検査が速い。
+7.1 で入った content mapper を、クエリの型付けに使う reylo が必要とする（「クエリの型安全」を参照）。
+7.1 はまだ安定版がなく、reylo は 2026-11-12 以降の nightly を要求するため、nightly の版を固定して使い、安定版が出たら移る。
 Workers の型定義（`wrangler types` で生成する `Env` など）と、Discord API の型を提供する `discord-api-types` をそのまま使える。
 
 フレームワークは使わず、素の fetch handler で書く。
@@ -104,23 +107,84 @@ D1 が書き込み直後の値を読めるのは、既定ではデータを1か�
 - 読み取りレプリカ（read replication）は有効にしない。有効にすると読み取りが最寄りのレプリカに送られ、KV と同じく書き込み直後に古い値を読む可能性が出る。
 - データベースの作成時に location hint で `apac` を指定する。利用者の多くは日本にいると考えられるので、プライマリをアジア太平洋に置けば問い合わせの往復が短くなる。location hint は作成後に変えられない。
 
-テーブルは1つだけ持つ。
+### テーブル
+
+テーブルは1つだけ持ち、マイグレーションの SQL で定義する。
 
 ```sql
 CREATE TABLE channel_settings (
   channel_id  TEXT PRIMARY KEY,
   origin_lang TEXT NOT NULL,
-  relay_langs TEXT NOT NULL, -- JSON 配列（例: ["en","fr"]）
+  relay_langs TEXT NOT NULL CHECK (json_type(relay_langs) = 'array'), -- JSON 配列（例: ["en","fr"]）
   updated_at  INTEGER NOT NULL -- UNIX 時刻（ミリ秒）
 );
 ```
 
 - 行がないチャンネルは未設定とみなし、既定値（中継言語 `en`、原文の言語 `ja`）を使う。読み取りのたびに行を作ることはしない。
 - `/settings relay` と `/settings origin` は `INSERT ... ON CONFLICT(channel_id) DO UPDATE` で、指定した列だけを更新する。行がなければ、指定しなかった列には既定値を入れる。
-- 中継言語は最大10個で、個別に検索することもないため、別テーブルに分けず JSON 配列の文字列で持つ。
+- 中継言語は JSON 配列の文字列で持つ。SQLite には配列型がなく、中継言語は常にまとめて読み書きするため、別テーブルに分けるほどの理由がない。`json_type` の CHECK 制約で、配列でない値は D1 が書き込みを拒む。
 - スレッドは親チャンネルと別の `channel_id` を持つため、設定もスレッドごとに独立する。現行も同じ挙動である。
 
-スキーマの変更は `migrations/` に置いた SQL を `wrangler d1 migrations apply` で適用する。
+### クエリの型安全
+
+D1 の素の API（`env.DB.prepare(...).first<T>()`）は、型引数 `T` を書いた側の申告をそのまま信じる。
+列名を間違えても、型検査では気付けない。
+
+そこで reylo を使い、`.sql` ファイルに書いたクエリを TypeScript から import して型を付ける。
+reylo は TypeScript 7.1 の content mapper の上で動き、型検査のときに型検査用のデータベースファイル（「マイグレーション」を参照）からテーブルの構造を読み取って、クエリの引数と結果の型を導く。
+クエリは素の SQL のまま書けて、テーブルの型を手で書く必要がない。
+
+```sql
+-- src/settings/queries/get_channel_settings.sql
+select origin_lang, relay_langs from channel_settings where channel_id = :channelId
+```
+
+```ts
+import getChannelSettings from "./queries/get_channel_settings.sql";
+
+const row = await getChannelSettings.run(env.DB, { channelId });
+// { origin_lang: string; relay_langs: string } | null
+```
+
+`relay_langs` は SQLite では `TEXT` なので、結果の型も `string` になると見込んでいる。
+配列への変換（`JSON.parse`）は `settings/store.ts` で行い、`store.ts` の外には `string[]` だけを渡す。
+
+reylo の採用は検証を兼ねる。
+reylo は 0.x 系で、前提とする TypeScript 7.1 もまだ安定版がないため、実装の途中で使えなくなる可能性がある。
+次のどれかに当たったら、Drizzle ORM に切り替える。
+
+- D1 に対するクエリに、期待どおりの型が付かない。
+- Workers 向けのビルド（wrangler）や Vitest（`@cloudflare/vitest-pool-workers`）で `.sql` の import を解決できない。
+- 固定した TypeScript 7.1 の nightly で、型検査や oxlint の型情報を使うルールが動かない。
+
+切り替えるときは、Drizzle のスキーマをこの節の SQL と同じ定義で書き、JSON の列は `text("relay_langs", { mode: "json" }).$type<string[]>()` として読み出し時に配列にする。
+クエリは3本程度なので、切り替えの影響は `settings/` の中に収まる。
+Drizzle にすると content mapper が要らなくなるので、TypeScript も 7.0 の安定版に戻せる。
+
+### マイグレーション
+
+`migrations/` に SQL を手で書き、`wrangler d1 migrations apply` で適用する。
+
+reylo はマイグレーションファイルを読まない。
+実際のデータベースに接続し、どんなテーブルと列があるかをデータベース自身に問い合わせて型を作る。
+そのため型検査の前に、マイグレーションを適用したデータベースファイル（SQLite）を用意しておき、`DATABASE_URL` で指す。
+
+```text
+migrations/*.sql（リポジトリで管理する正本）
+      │ マイグレーションを適用する
+      ▼
+型検査用の SQLite ファイル（git 管理外。毎回作り直す）
+      │ reylo がテーブルと列を問い合わせる
+      ▼
+.sql の import に型が付く
+```
+
+- 型検査用のファイルには、テーブルの構造だけがあればよい。データは入れない。
+- このファイルはリポジトリに置かず、`.gitignore` に入れる。バイナリなのでレビューで差分を読めず、マイグレーションと内容がずれても気付きにくいからである。毎回マイグレーションから作り直せば、ずれは起きない。
+- `wrangler d1 migrations apply --local` も手元にデータベースファイルを作るが、ファイル名を wrangler が決める（`.wrangler/state/` の下にハッシュ値の名前で置かれる）ため、`DATABASE_URL` で指し続けるのに向かない。型検査用のファイルは、決まったパスに別に作る。
+- 手元では型検査の前に、CI では型検査のステップの前に、このファイルを作り直す。
+
+具体的な手順は雛形のタスク（#30）で決める。
 
 ## モジュールの分け方
 
@@ -138,6 +202,7 @@ src/
     relay.ts            中継ルートに沿って翻訳を順に呼ぶ
     languages.ts        m2m100 の対応言語一覧と言語コードの検証
   settings/
+    queries/            reylo で import する SQL
     store.ts            D1 の読み書き
     route.ts            中継ルートの組み立てと表示用の文字列（例: ja 👉 en 👉 ja）
   discord/
@@ -147,10 +212,13 @@ scripts/
   register-commands.ts  コマンドの登録
 migrations/
   0001_create_channel_settings.sql
+.reylo.yaml
 ```
 
 依存の向きは `commands/` から `translation/`、`settings/`、`discord/` への一方向とする。
 下の層は `commands/` を参照しない。
+この規則は oxlint の `no-restricted-imports` を `overrides` でディレクトリごとに設定して検査する。
+レビューで見落とすと逆向きの import が少しずつ増えていくので、CI で機械的に落とす。
 
 Workers の binding（`env.AI`、`env.DB`）は、`translation/relay.ts` と `settings/store.ts` が引数で受け取る。
 テストでは binding の代わりに同じ形の偽物を渡せるので、中継ルートの組み立てや言語コードの検証を Workers の実行環境なしで確かめられる。
@@ -164,7 +232,7 @@ Workers の binding（`env.AI`、`env.DB`）は、`translation/relay.ts` と `se
 | wrangler の指定 | 既定（`--env` なし） | `--env production` |
 | Worker 名 | `re-translate-bot-dev` | `re-translate-bot` |
 | D1 データベース | `re-translate-bot-dev` | `re-translate-bot` |
-| Discord アプリケーション | 開発用アプリ（新規に作る） | 現行のアプリ（client ID `981977773277061210`） |
+| Discord アプリケーション | 以前から使っている開発用アプリ（client ID は確認中） | 現行のアプリ（client ID `981977773277061210`） |
 | Interactions Endpoint URL | 開発用 Worker の `workers.dev` の URL | 本番 Worker の URL |
 
 既定を開発用にするのは、`--env` を付け忘れたときに本番へ配備されないようにするためである。
@@ -172,7 +240,9 @@ Workers の binding（`env.AI`、`env.DB`）は、`translation/relay.ts` と `se
 Worker が実行時に使う値は、アプリケーション ID と公開鍵の2つだけである。
 どちらも秘密ではないため `vars` に書く。
 followup の編集は Interaction のトークンで認可されるので、bot トークンを Worker に置く必要がない。
-bot トークンはコマンドの登録にだけ使い、手元の環境変数（`.dev.vars` などの git 管理外のファイル）から渡す。
+bot トークンはコマンドの登録にだけ使い、`.env.development.local` と `.env.production.local`（どちらも git 管理外）に置く。
+登録スクリプトは Discord の REST API を呼ぶだけで、Cloudflare 側の操作を含まない。
+`.dev.vars` は wrangler が手元で動かす Worker に読み込ませるファイルなので、そこに置くと Worker に bot トークンを置かないという方針と食い違う。
 シークレットの管理方針の詳細は #27 で決める。
 
 手元での動作確認は、開発用 Worker を配備して開発用アプリから呼ぶ形で行う。
@@ -184,7 +254,7 @@ Workers AI は `wrangler dev` でも Cloudflare 側で実行されるため、�
 `scripts/register-commands.ts` で、`commands/definitions.ts` の定義を Discord に登録する。
 
 - `PUT /applications/{application_id}/commands` で、グローバルコマンドを一括で上書きする。定義から消したコマンドは Discord 側からも消える。
-- 開発用と本番で同じスクリプトを使い、アプリケーション ID と bot トークンを環境変数で切り替える。
+- 開発用と本番で同じスクリプトを使い、読み込む環境変数のファイルで切り替える（例: `node --env-file=.env.development.local scripts/register-commands.ts`）。Node.js は型注釈を取り除いて `.ts` を直接実行できるので、ビルドの手順は要らない。
 - 実行は手動とし、コマンドの定義を変えたときにだけ走らせる。Worker の配備ごとに登録し直す必要はない。
 
 定義をハンドラと登録スクリプトで共有するのは、登録した引数名とハンドラが読む引数名の食い違いを防ぐためである。
@@ -194,11 +264,15 @@ Workers AI は `wrangler dev` でも Cloudflare 側で実行されるため、�
 | 用途 | 採用 |
 | --- | --- |
 | パッケージマネージャ | pnpm |
-| lint と format | Biome |
+| 型検査 | TypeScript 7.1 の nightly（`tsc --noEmit --runExternalCode`）。content mapper を動かすため `--runExternalCode` を付ける |
+| lint | oxlint（型情報を使うルールは `oxlint-tsgolint`） |
+| format | oxfmt |
 | テスト | Vitest（`@cloudflare/vitest-pool-workers`）。何をどこまでテストするかは #28 で決める |
-| CI | GitHub Actions で lint、型検査、テストを実行する |
+| CI | GitHub Actions で lint、format の検査、型検査、テストを実行する |
 
-lint と format は Biome 1つで済ませ、ESLint と Prettier の設定を2つ持たないようにする。
+lint と format は oxc のツールで揃える。
+`oxlint-tsgolint` は TypeScript 7 系と同じ Go 実装のコンパイラの上で動くため、型情報を使うルールも速く回せる。
+oxfmt は 1.0 に達していないので、版を固定し、更新時は差分を確かめてから上げる。
 テストは `@cloudflare/vitest-pool-workers` を使い、D1 を含めて Workers の実行環境で動かせるようにする。
 
 配備は当面、手元から `pnpm run deploy` で行う。
