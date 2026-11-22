@@ -187,6 +187,20 @@ describe('errorDetails', () => {
 		expect(errorDetails(error).stack?.split('\n')).toHaveLength(10);
 	});
 
+	it('message に `at ` で始まる行があっても、その行を stack に含めない', () => {
+		const details = errorDetails(new Error('上流が入力を拒否した:\n    at 原文'));
+
+		expect(details.stack).toBeDefined();
+		expect(details.stack).not.toContain('原文');
+	});
+
+	it('stack の先頭が name と message から組み立てた形と一致しなければ、stack を含めない', () => {
+		const error = new Error('原文');
+		error.stack = '    at 原文\n    at f (worker.js:1:1)';
+
+		expect(errorDetails(error).stack).toBeUndefined();
+	});
+
 	it('Error でない値が投げられたときは、何も取り出さない', () => {
 		expect(errorDetails('原文')).toEqual({});
 	});

@@ -266,6 +266,20 @@ export type ErrorDetails = {
 	stack?: StackFrames;
 };
 
+// stack は先頭に「name: message」を含み、message は複数行で `at ` で始まる行も含みうる。
+// 行の形だけで選ぶと message の行が紛れ込むので、先頭の部分を name と message から組み立てて正確に取り除く。
+function stackFrames(error: Error): string | undefined {
+	const header = error.message === '' ? error.name : `${error.name}: ${error.message}`;
+	// 先頭が一致しないとき（stack を書き換えた、生成後に name や message を変えた）は、message の範囲が分からないので出さない。
+	if (error.stack === undefined || !error.stack.startsWith(header)) return undefined;
+	const lines = error.stack
+		.slice(header.length)
+		.split('\n')
+		.filter((line) => line !== '');
+	if (lines.length === 0 || !lines.every((line) => STACK_FRAME.test(line))) return undefined;
+	return lines.slice(0, MAX_STACK_FRAMES).join('\n');
+}
+
 const codeOf = (value: unknown): unknown => (typeof value === 'object' && value !== null && 'code' in value ? value.code : undefined);
 
 // message は入力の一部を含まない保証がないので、取り出さない。
@@ -278,13 +292,8 @@ export function errorDetails(error: unknown): ErrorDetails {
 	if (error.cause instanceof Error && isIdentifier(error.cause.name)) details.causeName = error.cause.name;
 	const causeCode = codeOf(error.cause);
 	if (isErrorCode(causeCode)) details.causeCode = causeCode;
-	// message は複数行のことがあるので、先頭の行を除くのではなく、コードの位置の行だけを選ぶ。
-	const frames = (error.stack ?? '')
-		.split('\n')
-		.filter((line) => STACK_FRAME.test(line))
-		.slice(0, MAX_STACK_FRAMES)
-		.join('\n');
-	if (frames !== '' && isStackFrames(frames)) details.stack = frames;
+	const frames = stackFrames(error);
+	if (isStackFrames(frames)) details.stack = frames;
 	return details;
 }
 
