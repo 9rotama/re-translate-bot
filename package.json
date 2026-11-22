@@ -1,0 +1,40 @@
+{
+	"name": "re-translate-bot",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@10.34.9",
+	"engines": {
+		"node": ">=26"
+	},
+	"scripts": {
+		"deploy": "wrangler deploy --env production",
+		"deploy:dev": "wrangler deploy",
+		"dev": "wrangler dev",
+		"start": "wrangler dev",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:coverage": "vitest run --coverage",
+		"typecheck": "wrangler types --check && tsc --noEmit && tsc --noEmit -p test",
+		"lint": "oxlint --type-aware",
+		"format": "oxfmt",
+		"format:check": "oxfmt --check",
+		"db:migrate:local": "wrangler d1 migrations apply DB --local",
+		"cf-typegen": "wrangler types"
+	},
+	"dependencies": {
+		"discord-api-types": "0.38.60",
+		"drizzle-orm": "0.45.4"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-plugin": "1.9.0",
+		"@types/node": "26.6.6",
+		"@vitest/coverage-istanbul": "5.1.1",
+		"oxfmt": "0.79.0",
+		"oxlint": "1.94.0",
+		"oxlint-tsgolint": "7.0.2008",
+		"typescript": "7.0.2",
+		"vitest": "5.1.1",
+		"wrangler": "4.166.0"
+	}
+}

@@ -1,0 +1,40 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "oxc", "import", "vitest"],
+	"categories": {
+		"correctness": "error",
+		"suspicious": "error"
+	},
+	"options": {
+		"typeAware": true
+	},
+	"ignorePatterns": ["dist/**", "legacy/**", "coverage/**", "worker-configuration.d.ts"],
+	"rules": {
+		"typescript/no-floating-promises": "error",
+		"typescript/no-misused-promises": "error",
+		"typescript/await-thenable": "error",
+		"typescript/no-unsafe-assignment": "error",
+		"typescript/no-unsafe-member-access": "error",
+		"typescript/no-unsafe-return": "error",
+		"typescript/no-unsafe-call": "error",
+		"typescript/no-unsafe-argument": "error"
+	},
+	"overrides": [
+		{
+			"files": ["src/verify.ts", "src/translation/**", "src/settings/**", "src/discord/**"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"group": ["**/commands", "**/commands/**"],
+								"message": "依存は commands/ から下の層への一方向に限る（docs/architecture.md の「モジュールの分け方」）。"
+							}
+						]
+					}
+				]
+			}
+		}
+	]
+}
