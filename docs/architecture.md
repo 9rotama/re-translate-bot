@@ -192,6 +192,9 @@ Drizzle は通常の TypeScript で書けるので、content mapper が要らず
 src/
   index.ts              fetch handler。署名を検証し、Interaction の type で振り分ける
   verify.ts             Ed25519 の署名検証
+  log.ts                構造化ログの出力。記録するイベントとフィールドを型で定める（[ログ設計](./logging.md)）
+  result.ts             想定できる失敗を返すための Result 型
+  errors.ts             Result の失敗側で使うエラーの種類。log.ts のイベント定義から導く
   commands/
     definitions.ts      コマンドの定義（名前、引数、説明文）。登録スクリプトと共有する
     dispatch.ts         コマンド名からハンドラを選ぶ
@@ -210,17 +213,39 @@ src/
     followup.ts         遅延応答の後に元のメッセージを編集する
 scripts/
   register-commands.ts  コマンドの登録
+  gen-log-events.ts     src/log.ts から docs/log-events.md を生成する
 migrations/
   0001_create_channel_settings.sql
 ```
 
 依存の向きは `commands/` から `translation/`、`settings/`、`discord/` への一方向とする。
 下の層は `commands/` を参照しない。
+`log.ts`、`result.ts`、`errors.ts` はどの層からも呼ばれる。`log.ts` と `result.ts` は他のモジュールを import せず、`errors.ts` は `log.ts` の型だけを import する。
 この規則は oxlint の `no-restricted-imports` を `overrides` でディレクトリごとに設定して検査する。
 レビューで見落とすと逆向きの import が少しずつ増えていくので、CI で機械的に落とす。
 
 Workers の binding（`env.AI`、`env.DB`）は、`translation/relay.ts` と `settings/store.ts` が引数で受け取る。
 テストでは binding の代わりに同じ形の偽物を渡せるので、中継ルートの組み立てや言語コードの検証を Workers の実行環境なしで確かめられる。
+
+### エラーの扱い
+
+想定できる失敗（Workers AI の失敗、D1 の失敗、Discord への送信の失敗など）は、throw せずに `Result` で返す。
+外部を呼ぶ境界（Workers AI、D1、fetch）で例外を捕まえ、エラーの種類と、例外から取り出した情報（name、code、stack の位置）を持つ自前のデータに変える。
+例外のまま上の層へ伝えると、どこで何が起きたかが呼び出し側から見えず、ログに残せる情報も失われるからである。
+
+想定していない例外だけは throw のまま伝え、fetch handler と `waitUntil` に渡す処理の最も外側で捕まえて記録する。
+`Result` はライブラリを使わずに自前で定義する。判別できれば足り、合成のためのメソッドは要らないからである。
+
+`Result` の失敗側の型は、各モジュールが定義する。
+ログに出す失敗（Workers AI、D1、followup の失敗）は、エラーの種類に `errors.ts` の型を使う。
+この型は `log.ts` のイベント定義から導くので、ハンドリングで分ける粒度はログで見分ける粒度と同じになる。
+今の要件では扱いを変えたい失敗と後から見分けたい失敗が一致しているので、粒度が同じでも困らない。
+ハンドリングで細かく分けたくなったときは、ログのイベント定義も同じく細かくする。
+
+ログに出さず `Result` で返すだけの失敗（入力の誤りなど）は、各モジュールが自分で型を作ってよい。
+`result.ts` の `Result` と `err` には、エラーの種類の型の制約を掛けない。
+制約を掛けると、ログに出さない失敗を返すためだけにログの定義へ種類を足すことになるからである。
+ログの定義にない種類で作った失敗は、`log()` に渡すときの型検査で見つかる。
 
 ## 環境の分け方
 

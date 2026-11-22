@@ -17,11 +17,16 @@
 		"typescript/no-unsafe-member-access": "error",
 		"typescript/no-unsafe-return": "error",
 		"typescript/no-unsafe-call": "error",
-		"typescript/no-unsafe-argument": "error"
+		"typescript/no-unsafe-argument": "error",
+		"no-console": "error"
 	},
 	"overrides": [
 		{
-			"files": ["src/verify.ts", "src/translation/**", "src/settings/**", "src/discord/**"],
+			"files": ["src/log.ts", "scripts/**"],
+			"rules": { "no-console": "off" }
+		},
+		{
+			"files": ["src/verify.ts", "src/log.ts", "src/result.ts", "src/errors.ts", "src/translation/**", "src/settings/**", "src/discord/**"],
 			"rules": {
 				"no-restricted-imports": [
 					"error",

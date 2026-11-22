@@ -10,8 +10,15 @@
 	"name": "re-translate-bot-dev",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-11-19",
+	// 方針は docs/logging.md の「集め方」。env.production にも引き継がれる。
 	"observability": {
 		"enabled": true,
+		"head_sampling_rate": 1,
+		"logs": { "invocation_logs": true },
+		// traces は followup の URL（Interaction のトークンを含む）を記録するので使わない。
+		"traces": { "enabled": false },
+		// Issues は例外を message ごと集めるので使わない。
+		"issues": { "enabled": false },
 	},
 	"upload_source_maps": true,
 	// Workers AI はローカルで動かないので、wrangler dev でも Cloudflare 側で実行される。

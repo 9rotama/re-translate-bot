@@ -25,6 +25,7 @@ export default defineConfig(async () => ({
 			reporter: ['text', 'html'],
 			thresholds: {
 				'src/verify.ts': branches90,
+				'src/log.ts': branches90,
 				'src/translation/**': branches90,
 				'src/settings/route.ts': branches90,
 				'src/settings/store.ts': branches90,
