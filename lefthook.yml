@@ -1,0 +1,12 @@
+# コミット前に、ステージしたファイルだけを整形・検査する。
+# 型検査とテストはプロジェクト全体にかかり時間が延びるので、ここでは行わず CI に任せる。
+pre-commit:
+  parallel: false
+  commands:
+    format:
+      glob: '*.{ts,mts,js,mjs,json,jsonc,yml,yaml}'
+      run: pnpm exec oxfmt {staged_files}
+      stage_fixed: true
+    lint:
+      glob: '*.{ts,mts,js,mjs}'
+      run: pnpm exec oxlint --type-aware {staged_files}
