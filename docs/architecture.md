@@ -192,6 +192,7 @@ Drizzle は通常の TypeScript で書けるので、content mapper が要らず
 src/
   index.ts              fetch handler。署名を検証し、Interaction の type で振り分ける
   verify.ts             Ed25519 の署名検証
+  log.ts                構造化ログの出力。記録するイベントとフィールドを型で定める（[ログ設計](./logging.md)）
   commands/
     definitions.ts      コマンドの定義（名前、引数、説明文）。登録スクリプトと共有する
     dispatch.ts         コマンド名からハンドラを選ぶ
@@ -210,12 +211,14 @@ src/
     followup.ts         遅延応答の後に元のメッセージを編集する
 scripts/
   register-commands.ts  コマンドの登録
+  gen-log-events.ts     src/log.ts から docs/log-events.md を生成する
 migrations/
   0001_create_channel_settings.sql
 ```
 
 依存の向きは `commands/` から `translation/`、`settings/`、`discord/` への一方向とする。
 下の層は `commands/` を参照しない。
+`log.ts` はどの層からも呼ばれ、自身は他のモジュールを import しない。
 この規則は oxlint の `no-restricted-imports` を `overrides` でディレクトリごとに設定して検査する。
 レビューで見落とすと逆向きの import が少しずつ増えていくので、CI で機械的に落とす。
 

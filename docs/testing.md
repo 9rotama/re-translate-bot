@@ -28,7 +28,7 @@
 ```mermaid
 flowchart LR
   test([テスト])
-  test --> pure["verify.ts<br>languages.ts<br>route.ts<br>response.ts<br>dispatch.ts"]
+  test --> pure["verify.ts<br>log.ts<br>languages.ts<br>route.ts<br>response.ts<br>dispatch.ts"]
   test --> relay["translation/relay.ts"] --> ai[["偽物の AI binding"]]
   test --> followup["discord/followup.ts"] --> fetch[["偽物の fetch"]]
 ```
@@ -36,6 +36,8 @@ flowchart LR
 外部との境界を持たないモジュールは、何も差し替えずに呼ぶ。
 `relay.ts` は AI binding を引数で受け取るので、同じ形の偽物を渡す。
 `followup.ts` は Discord API を fetch で呼ぶので、外向きの fetch を差し替える。
+`log.ts` は `console` の各メソッドを spy し、イベントが決めたレベルと値で出力されるかを確かめる。
+ログ関数を呼ぶ側のテストでは、失敗の場面で期待するイベントが出たことだけを確かめる。値の検査は `log.ts` のテストで済ませているためである。
 
 ### 単体（ソーシャル）
 
@@ -111,7 +113,7 @@ JSON の fixture を置かないのは、型の更新で項目が変わったと
 
 | レベル | 範囲 | 目標 |
 | --- | --- | --- |
-| 単体（単独） | `verify.ts`、`translation/`、`settings/route.ts`、`discord/` | 分岐 90% 以上 |
+| 単体（単独） | `verify.ts`、`log.ts`、`translation/`、`settings/route.ts`、`discord/` | 分岐 90% 以上 |
 | 単体（ソーシャル） | `settings/store.ts` | 分岐 90% 以上 |
 | 単体（ソーシャル） | `commands/`（`definitions.ts` を除く） | 測るが閾値は置かない |
 | 結合 | `index.ts` | 測るが閾値は置かない |
@@ -129,7 +131,7 @@ JSON の fixture を置かないのは、型の更新で項目が変わったと
 
 - lint（oxlint）
 - format の検査（oxfmt）
-- 型検査（tsc。`wrangler types` で生成した型が `wrangler.jsonc` と一致しているかも確かめる）
+- 型検査（tsc。`wrangler types` で生成した型が `wrangler.jsonc` と一致しているか、`docs/log-events.md` が `src/log.ts` と一致しているかも確かめる）
 - テスト（カバレッジの閾値を含む）
 
 実装タスクの完了条件は、この方針で定めたテストが揃い、これらがすべて通ることとする。
@@ -146,3 +148,6 @@ Discord の表示と Workers AI の実物は、テストの実行環境で再現
 - `/rt` で「考え中」の表示が出て、中継言語10個でも30秒以内に結果かエラーに置き換わるか
 - 本文の `@everyone` などで通知が飛ばないか
 - 権限と intent を外した状態で招待し、すべてのコマンドが動くか
+- Workers Logs の invocation logs にリクエストの本文が含まれていないか（[ログ設計](./logging.md)の「集め方」）
+- `waitUntil` の中で出したログが同じ呼び出しのログとしてまとめて見られるか
+- ログ1件の大きさが見積もり（2.5KB 以下）に収まっているか

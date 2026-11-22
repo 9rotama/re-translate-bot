@@ -15,6 +15,8 @@
 		"moduleResolution": "Bundler",
 		/* Enable importing .json files */
 		"resolveJsonModule": true,
+		/* scripts/ は Node の型の除去でそのまま実行するので、import に .ts を書く必要がある */
+		"allowImportingTsExtensions": true,
 
 		/* Allow JavaScript files to be a part of your program. Use the `checkJS` option to get errors from these files. */
 		"allowJs": true,
@@ -39,5 +41,5 @@
 		"types": ["./worker-configuration.d.ts", "node"]
 	},
 	"exclude": ["test"],
-	"include": ["worker-configuration.d.ts", "src/**/*.ts"]
+	"include": ["worker-configuration.d.ts", "src/**/*.ts", "scripts/**/*.ts"]
 }

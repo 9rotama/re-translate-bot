@@ -1,0 +1,123 @@
+# ログのイベント一覧
+
+<!-- このファイルは scripts/gen-log-events.ts で src/log.ts から生成する。手で編集せず、`pnpm run log-events` で作り直す。 -->
+
+記録の方針は[ログ設計](./logging.md)で定める。
+どのイベントもイベント名を `event` に持つ。
+値がないか検査を通らなかったときは、その値を出さずにフィールド名を `invalid` に並べる。
+存在しないイベント名を渡したときは、`unknown_event` を `error` で出す。
+
+| イベント | レベル | 内容 |
+| --- | --- | --- |
+| `interaction.received` | `log` | Interaction を受け取った |
+| `signature.rejected` | `warn` | 署名を検証できないリクエストを拒んだ |
+| `rt.rate_limited` | `log` | /rt をレート制限で断った |
+| `translation.step.succeeded` | `log` | 翻訳の1段が成功した |
+| `translation.step.failed` | `warn` | 翻訳の1段が失敗した。再試行した段は試行ごとに出す |
+| `translation.succeeded` | `log` | 翻訳全体が成功した |
+| `translation.failed` | `error` | 翻訳全体が失敗し、利用者にエラーを表示した |
+| `followup.failed` | `error` | 遅延応答の後に元のメッセージを編集できなかった |
+| `d1.failed` | `error` | D1 の読み書きに失敗した |
+| `unhandled_error` | `error` | 想定していない例外を最も外側で捕まえた |
+
+## `interaction.received`
+
+Interaction を受け取った。レベルは `log`。
+
+| 値 | 意味 | 取りうる値 |
+| --- | --- | --- |
+| `interactionType` | Interaction の type（discord-api-types の InteractionType） | 0以上の整数 |
+| `command` | コマンド名。コマンド以外の Interaction では出さない | `rt`：/rt<br>`settings show`：/settings show<br>`settings relay`：/settings relay<br>`settings origin`：/settings origin<br>`help`：/help |
+
+## `signature.rejected`
+
+署名を検証できないリクエストを拒んだ。レベルは `warn`。
+
+| 値 | 意味 | 取りうる値 |
+| --- | --- | --- |
+| `reason` | 拒んだ理由 | `missing_header`：署名のヘッダがない<br>`invalid_signature`：署名の検証に失敗した |
+
+## `rt.rate_limited`
+
+/rt をレート制限で断った。レベルは `log`。
+
+`event` 以外の値は持たない。
+
+## `translation.step.succeeded`
+
+翻訳の1段が成功した。レベルは `log`。
+
+| 値 | 意味 | 取りうる値 |
+| --- | --- | --- |
+| `step` | 何段目か（1から数える） | 0以上の整数 |
+| `steps` | 全体の段数 | 0以上の整数 |
+| `attempt` | その段の何回目の試行か（1から数える） | 0以上の整数 |
+| `from` | 翻訳元の言語 | 言語コード（例: `ja`） |
+| `to` | 翻訳先の言語 | 言語コード（例: `ja`） |
+| `inputLength` | 翻訳前の文字数 | 0以上の整数 |
+| `outputLength` | 翻訳後の文字数 | 0以上の整数 |
+| `durationMs` | 所要時間（ミリ秒） | 0以上の整数 |
+
+## `translation.step.failed`
+
+翻訳の1段が失敗した。再試行した段は試行ごとに出す。レベルは `warn`。
+
+| 値 | 意味 | 取りうる値 |
+| --- | --- | --- |
+| `step` | 何段目か（1から数える） | 0以上の整数 |
+| `steps` | 全体の段数 | 0以上の整数 |
+| `attempt` | その段の何回目の試行か（1から数える） | 0以上の整数 |
+| `from` | 翻訳元の言語 | 言語コード（例: `ja`） |
+| `to` | 翻訳先の言語 | 言語コード（例: `ja`） |
+| `inputLength` | 翻訳前の文字数 | 0以上の整数 |
+| `durationMs` | 所要時間（ミリ秒） | 0以上の整数 |
+| `errorKind` | エラーの種類 | `quota_exceeded`：無料枠の使い切り<br>`timeout`：時間切れ<br>`ai_error`：それ以外の Workers AI の失敗 |
+| `status` | Workers AI が返した HTTP の status。分からないときは出さない | 0以上の整数 |
+
+## `translation.succeeded`
+
+翻訳全体が成功した。レベルは `log`。
+
+| 値 | 意味 | 取りうる値 |
+| --- | --- | --- |
+| `steps` | 全体の段数 | 0以上の整数 |
+| `inputLength` | 翻訳前の文字数 | 0以上の整数 |
+| `outputLength` | 翻訳後の文字数 | 0以上の整数 |
+| `durationMs` | 所要時間（ミリ秒） | 0以上の整数 |
+
+## `translation.failed`
+
+翻訳全体が失敗し、利用者にエラーを表示した。レベルは `error`。
+
+| 値 | 意味 | 取りうる値 |
+| --- | --- | --- |
+| `steps` | 全体の段数 | 0以上の整数 |
+| `completedSteps` | 失敗までに終わった段数 | 0以上の整数 |
+| `inputLength` | 翻訳前の文字数 | 0以上の整数 |
+| `durationMs` | 所要時間（ミリ秒） | 0以上の整数 |
+| `errorKind` | エラーの種類 | `quota_exceeded`：無料枠の使い切り<br>`timeout`：時間切れ<br>`ai_error`：それ以外の Workers AI の失敗<br>`settings_unavailable`：設定を読めなかった |
+
+## `followup.failed`
+
+遅延応答の後に元のメッセージを編集できなかった。レベルは `error`。
+
+| 値 | 意味 | 取りうる値 |
+| --- | --- | --- |
+| `errorKind` | エラーの種類 | `http_error`：Discord が失敗の status を返した<br>`network_error`：応答を受け取れなかった |
+| `status` | Discord が返した HTTP の status。http_error のときだけ出す | 0以上の整数 |
+
+## `d1.failed`
+
+D1 の読み書きに失敗した。レベルは `error`。
+
+| 値 | 意味 | 取りうる値 |
+| --- | --- | --- |
+| `operation` | 失敗した操作 | `settings.read`：設定の読み取り<br>`settings.write`：設定の書き込み |
+
+## `unhandled_error`
+
+想定していない例外を最も外側で捕まえた。レベルは `error`。
+
+| 値 | 意味 | 取りうる値 |
+| --- | --- | --- |
+| `where` | 捕まえた場所 | `fetch`：fetch handler<br>`wait_until`：waitUntil に渡した処理 |
