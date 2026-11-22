@@ -24,8 +24,7 @@
 		{
 			"binding": "DB",
 			"database_name": "re-translate-bot-dev",
-			// 仮の値。`wrangler d1 create re-translate-bot-dev --location apac` で作り、表示された ID に置き換える。
-			"database_id": "00000000-0000-0000-0000-000000000000",
+			"database_id": "89cf8f49-18a4-4320-beb9-7f7ba520cd44",
 			"migrations_dir": "migrations",
 		},
 	],
@@ -41,8 +40,7 @@
 				{
 					"binding": "DB",
 					"database_name": "re-translate-bot",
-					// 仮の値。`wrangler d1 create re-translate-bot --location apac` で作り、表示された ID に置き換える。
-					"database_id": "00000000-0000-0000-0000-000000000001",
+					"database_id": "d8c2e0ad-8881-4a84-b3f0-03fbac92394b",
 					"migrations_dir": "migrations",
 				},
 			],
