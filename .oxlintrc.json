@@ -26,7 +26,7 @@
 			"rules": { "no-console": "off" }
 		},
 		{
-			"files": ["src/verify.ts", "src/log.ts", "src/result.ts", "src/translation/**", "src/settings/**", "src/discord/**"],
+			"files": ["src/verify.ts", "src/log.ts", "src/result.ts", "src/errors.ts", "src/translation/**", "src/settings/**", "src/discord/**"],
 			"rules": {
 				"no-restricted-imports": [
 					"error",

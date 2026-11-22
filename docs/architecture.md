@@ -194,6 +194,7 @@ src/
   verify.ts             Ed25519 の署名検証
   log.ts                構造化ログの出力。記録するイベントとフィールドを型で定める（[ログ設計](./logging.md)）
   result.ts             想定できる失敗を返すための Result 型
+  errors.ts             Result の失敗側で使うエラーの種類。log.ts のイベント定義から導く
   commands/
     definitions.ts      コマンドの定義（名前、引数、説明文）。登録スクリプトと共有する
     dispatch.ts         コマンド名からハンドラを選ぶ
@@ -219,7 +220,7 @@ migrations/
 
 依存の向きは `commands/` から `translation/`、`settings/`、`discord/` への一方向とする。
 下の層は `commands/` を参照しない。
-`log.ts` と `result.ts` はどの層からも呼ばれ、自身は他のモジュールを import しない。
+`log.ts`、`result.ts`、`errors.ts` はどの層からも呼ばれる。`log.ts` と `result.ts` は他のモジュールを import せず、`errors.ts` は `log.ts` の型だけを import する。
 この規則は oxlint の `no-restricted-imports` を `overrides` でディレクトリごとに設定して検査する。
 レビューで見落とすと逆向きの import が少しずつ増えていくので、CI で機械的に落とす。
 
@@ -234,6 +235,12 @@ Workers の binding（`env.AI`、`env.DB`）は、`translation/relay.ts` と `se
 
 想定していない例外だけは throw のまま伝え、fetch handler と `waitUntil` に渡す処理の最も外側で捕まえて記録する。
 `Result` はライブラリを使わずに自前で定義する。判別できれば足り、合成のためのメソッドは要らないからである。
+
+`Result` の失敗側の型は、外部を呼ぶ各モジュールが定義する。
+ただし、エラーの種類には `errors.ts` の型を使う。
+この型は `log.ts` のイベント定義から導くので、ハンドリングで分ける粒度はログで見分ける粒度と同じになる。
+今の要件では扱いを変えたい失敗と後から見分けたい失敗が一致しているので、粒度が同じでも困らない。
+ハンドリングで細かく分けたくなったときは、ログのイベント定義も同じく細かくする。
 
 ## 環境の分け方
 
