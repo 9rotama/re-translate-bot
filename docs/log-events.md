@@ -28,6 +28,8 @@ Interaction を受け取った。レベルは `log`。
 | --- | --- | --- |
 | `interactionType` | Interaction の type（discord-api-types の InteractionType） | 0以上の整数 |
 | `command` | コマンド名。コマンド以外の Interaction では出さない | `rt`：/rt<br>`settings show`：/settings show<br>`settings relay`：/settings relay<br>`settings origin`：/settings origin<br>`help`：/help |
+| `guildId` | ギルド ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `channelId` | チャンネル ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
 
 ## `signature.rejected`
 
@@ -73,6 +75,13 @@ Interaction を受け取った。レベルは `log`。
 | `durationMs` | 所要時間（ミリ秒） | 0以上の整数 |
 | `errorKind` | エラーの種類 | `quota_exceeded`：無料枠の使い切り<br>`timeout`：時間切れ<br>`ai_error`：それ以外の Workers AI の失敗 |
 | `status` | Workers AI が返した HTTP の status。分からないときは出さない | 0以上の整数 |
+| `guildId` | ギルド ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `channelId` | チャンネル ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `errorName` | 例外の name | 英字で始まる識別子（64文字まで） |
+| `errorCode` | 例外の code | 英字で始まる識別子（64文字まで）か整数 |
+| `causeName` | 例外の cause の name | 英字で始まる識別子（64文字まで） |
+| `causeCode` | 例外の cause の code | 英字で始まる識別子（64文字まで）か整数 |
+| `stack` | 例外の stack のうち、コードの位置の行 | `at` で始まる行を改行でつないだもの（10行まで） |
 
 ## `translation.succeeded`
 
@@ -96,6 +105,8 @@ Interaction を受け取った。レベルは `log`。
 | `inputLength` | 翻訳前の文字数 | 0以上の整数 |
 | `durationMs` | 所要時間（ミリ秒） | 0以上の整数 |
 | `errorKind` | エラーの種類 | `quota_exceeded`：無料枠の使い切り<br>`timeout`：時間切れ<br>`ai_error`：それ以外の Workers AI の失敗<br>`settings_unavailable`：設定を読めなかった |
+| `guildId` | ギルド ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `channelId` | チャンネル ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
 
 ## `followup.failed`
 
@@ -105,6 +116,13 @@ Interaction を受け取った。レベルは `log`。
 | --- | --- | --- |
 | `errorKind` | エラーの種類 | `http_error`：Discord が失敗の status を返した<br>`network_error`：応答を受け取れなかった |
 | `status` | Discord が返した HTTP の status。http_error のときだけ出す | 0以上の整数 |
+| `guildId` | ギルド ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `channelId` | チャンネル ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `errorName` | 例外の name | 英字で始まる識別子（64文字まで） |
+| `errorCode` | 例外の code | 英字で始まる識別子（64文字まで）か整数 |
+| `causeName` | 例外の cause の name | 英字で始まる識別子（64文字まで） |
+| `causeCode` | 例外の cause の code | 英字で始まる識別子（64文字まで）か整数 |
+| `stack` | 例外の stack のうち、コードの位置の行 | `at` で始まる行を改行でつないだもの（10行まで） |
 
 ## `d1.failed`
 
@@ -112,7 +130,14 @@ D1 の読み書きに失敗した。レベルは `error`。
 
 | 値 | 意味 | 取りうる値 |
 | --- | --- | --- |
-| `operation` | 失敗した操作 | `settings.read`：設定の読み取り<br>`settings.write`：設定の書き込み |
+| `operation` | 失敗したクエリ | `settings.read`：チャンネルの設定の読み取り<br>`settings.upsert_relay`：中継言語の書き込み<br>`settings.upsert_origin`：原文の言語の書き込み |
+| `guildId` | ギルド ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `channelId` | チャンネル ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `errorName` | 例外の name | 英字で始まる識別子（64文字まで） |
+| `errorCode` | 例外の code | 英字で始まる識別子（64文字まで）か整数 |
+| `causeName` | 例外の cause の name | 英字で始まる識別子（64文字まで） |
+| `causeCode` | 例外の cause の code | 英字で始まる識別子（64文字まで）か整数 |
+| `stack` | 例外の stack のうち、コードの位置の行 | `at` で始まる行を改行でつないだもの（10行まで） |
 
 ## `unhandled_error`
 
@@ -121,3 +146,10 @@ D1 の読み書きに失敗した。レベルは `error`。
 | 値 | 意味 | 取りうる値 |
 | --- | --- | --- |
 | `where` | 捕まえた場所 | `fetch`：fetch handler<br>`wait_until`：waitUntil に渡した処理 |
+| `guildId` | ギルド ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `channelId` | チャンネル ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `errorName` | 例外の name | 英字で始まる識別子（64文字まで） |
+| `errorCode` | 例外の code | 英字で始まる識別子（64文字まで）か整数 |
+| `causeName` | 例外の cause の name | 英字で始まる識別子（64文字まで） |
+| `causeCode` | 例外の cause の code | 英字で始まる識別子（64文字まで）か整数 |
+| `stack` | 例外の stack のうち、コードの位置の行 | `at` で始まる行を改行でつないだもの（10行まで） |

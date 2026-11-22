@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
-import { log, type LogEvent } from '../src/log';
+import { errorDetails, interactionPlace, log, type LogEvent } from '../src/log';
 
 // 型をすり抜けた呼び出し（変数に入れたオブジェクトや、数に変換した値）を再現する。
 // 型の検査を通らない値をわざと渡すので、型の絞り込みはしない。
@@ -107,11 +107,95 @@ describe('log', () => {
 		});
 	});
 
+	describe('ID と例外の情報', () => {
+		it('取り出したギルド ID、チャンネル ID、例外の情報を出力する', () => {
+			const place = interactionPlace({ guild_id: '111111111111111111', channel: { id: '222222222222222222' } });
+			const details = errorDetails(new TypeError('原文'));
+
+			log({ event: 'd1.failed', operation: 'settings.read', ...place, ...details });
+
+			expect(spies.error).toHaveBeenCalledWith({
+				event: 'd1.failed',
+				operation: 'settings.read',
+				guildId: '111111111111111111',
+				channelId: '222222222222222222',
+				errorName: 'TypeError',
+				stack: details.stack,
+			});
+		});
+
+		it('型では、取り出す関数を通していない文字列を ID や例外の情報として渡せない', () => {
+			// @ts-expect-error ユーザー ID のような任意の文字列はギルド ID として渡せない
+			log({ event: 'd1.failed', operation: 'settings.read', guildId: '333333333333333333' });
+			// @ts-expect-error 例外の message のような任意の文字列は name として渡せない
+			log({ event: 'd1.failed', operation: 'settings.read', errorName: '原文' });
+
+			expect(spies.error).toHaveBeenCalledTimes(2);
+		});
+
+		it.each([
+			['ID の形でない文字列', 'guildId', '原文'],
+			['識別子の形でない name', 'errorName', 'Error: 原文'],
+			['識別子でも整数でもない code', 'errorCode', '原文'],
+			['コードの位置でない行を含む stack', 'stack', 'Error: 原文\n    at f (worker.js:1:1)'],
+		])('%sを渡すと、値を出さずに invalid に並べる', (_, field, value) => {
+			log(unchecked({ event: 'd1.failed', operation: 'settings.read', [field]: value }));
+
+			expect(spies.error).toHaveBeenCalledWith({ event: 'd1.failed', operation: 'settings.read', invalid: [field] });
+		});
+	});
+
 	describe('存在しないイベント', () => {
 		it.each(['原文が入ったイベント名', 'toString'])('「%s」を渡すと、名前を出さずに unknown_event を error で出す', (event) => {
 			log(unchecked({ event }));
 
 			expect(spies.error).toHaveBeenCalledWith({ event: 'unknown_event' });
 		});
+	});
+});
+
+describe('interactionPlace', () => {
+	it('Interaction のギルドとチャンネルの ID を取り出す', () => {
+		expect(interactionPlace({ guild_id: '111111111111111111', channel: { id: '222222222222222222' } })).toEqual({
+			guildId: '111111111111111111',
+			channelId: '222222222222222222',
+		});
+	});
+
+	it('ID がないか ID の形でなければ、その ID を含めない', () => {
+		expect(interactionPlace({})).toEqual({});
+		expect(interactionPlace({ guild_id: '原文', channel: { id: '1' } })).toEqual({});
+	});
+});
+
+describe('errorDetails', () => {
+	it('例外と cause の name と code、stack のコードの位置の行を取り出し、message は含めない', () => {
+		const cause = Object.assign(new RangeError('原文'), { code: 'SQLITE_ERROR' });
+		const error = Object.assign(new Error('原文\n2行目の原文', { cause }), { code: 7 });
+
+		const details = errorDetails(error);
+
+		expect(details).toMatchObject({ errorName: 'Error', errorCode: 7, causeName: 'RangeError', causeCode: 'SQLITE_ERROR' });
+		expect(details.stack?.split('\n').every((line) => line.trimStart().startsWith('at '))).toBe(true);
+		expect(JSON.stringify(details)).not.toContain('原文');
+	});
+
+	it('stack のコードの位置の行は、上から10行までにする', () => {
+		const error = new Error('原文');
+		error.stack = ['Error: 原文', ...Array.from({ length: 12 }, (_, i) => `    at f${i} (worker.js:${i}:1)`)].join('\n');
+
+		expect(errorDetails(error).stack?.split('\n')).toHaveLength(10);
+	});
+
+	it('Error でない値が投げられたときは、何も取り出さない', () => {
+		expect(errorDetails('原文')).toEqual({});
+	});
+
+	it('name と code が決めた形でなければ、それらを含めない', () => {
+		const error = Object.assign(new Error('原文'), { code: '原文' });
+		error.name = '原文';
+		error.stack = 'Error: 原文';
+
+		expect(errorDetails(error)).toEqual({});
 	});
 });

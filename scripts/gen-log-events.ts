@@ -9,6 +9,10 @@ const OUTPUT = join(import.meta.dirname, '../docs/log-events.md');
 function describeValues(field: FieldSpec): string {
 	if (field.kind === 'count') return '0以上の整数';
 	if (field.kind === 'lang') return '言語コード（例: `ja`）';
+	if (field.kind === 'snowflake') return 'Discord の ID（17〜20桁の数字の文字列）';
+	if (field.kind === 'identifier') return '英字で始まる識別子（64文字まで）';
+	if (field.kind === 'code') return '英字で始まる識別子（64文字まで）か整数';
+	if (field.kind === 'stack') return '`at` で始まる行を改行でつないだもの（10行まで）';
 	return Object.entries(field.values)
 		.map(([value, meaning]) => `\`${value}\`：${meaning}`)
 		.join('<br>');
