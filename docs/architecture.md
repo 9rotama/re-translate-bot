@@ -73,10 +73,8 @@ sequenceDiagram
 
 ## 言語とフレームワーク
 
-言語は TypeScript 7.1 とする。
+言語は TypeScript 7.0 とし、安定版の版を固定して使う。
 7 系はコンパイラを Go で書き直した版で、型検査が速い。
-7.1 で入った content mapper を、クエリの型付けに使う reylo が必要とする（「クエリの型安全」を参照）。
-7.1 はまだ安定版がなく、reylo は 2026-11-12 以降の nightly を要求するため、nightly の版を固定して使い、安定版が出たら移る。
 Workers の型定義（`wrangler types` で生成する `Env` など）と、Discord API の型を提供する `discord-api-types` をそのまま使える。
 
 フレームワークは使わず、素の fetch handler で書く。
@@ -130,61 +128,63 @@ CREATE TABLE channel_settings (
 D1 の素の API（`env.DB.prepare(...).first<T>()`）は、型引数 `T` を書いた側の申告をそのまま信じる。
 列名を間違えても、型検査では気付けない。
 
-そこで reylo を使い、`.sql` ファイルに書いたクエリを TypeScript から import して型を付ける。
-reylo は TypeScript 7.1 の content mapper の上で動き、型検査のときに型検査用のデータベースファイル（「マイグレーション」を参照）からテーブルの構造を読み取って、クエリの引数と結果の型を導く。
-クエリは素の SQL のまま書けて、テーブルの型を手で書く必要がない。
+そこで Drizzle ORM を使い、テーブルの定義を TypeScript のスキーマ（`settings/schema.ts`）として書いて、クエリに型を付ける。
+スキーマは「テーブル」の節の SQL と同じ定義で書く。
 
-```sql
--- src/settings/queries/get_channel_settings.sql
-select origin_lang, relay_langs from channel_settings where channel_id = :channelId
+```ts
+// src/settings/schema.ts
+export const channelSettings = sqliteTable(
+  "channel_settings",
+  {
+    channelId: text("channel_id").primaryKey(),
+    originLang: text("origin_lang").notNull(),
+    relayLangs: text("relay_langs", { mode: "json" }).$type<string[]>().notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [check("relay_langs_is_array", sql`json_type(${table.relayLangs}) = 'array'`)],
+);
 ```
 
 ```ts
-import getChannelSettings from "./queries/get_channel_settings.sql";
-
-const row = await getChannelSettings.run(env.DB, { channelId });
-// { origin_lang: string; relay_langs: string } | null
+const row = await drizzle(env.DB)
+  .select({ originLang: channelSettings.originLang, relayLangs: channelSettings.relayLangs })
+  .from(channelSettings)
+  .where(eq(channelSettings.channelId, channelId))
+  .get();
+// { originLang: string; relayLangs: string[] } | undefined
 ```
 
-`relay_langs` は SQLite では `TEXT` なので、結果の型も `string` になると見込んでいる。
-配列への変換（`JSON.parse`）は `settings/store.ts` で行い、`store.ts` の外には `string[]` だけを渡す。
+`relay_langs` は `{ mode: "json" }` を指定しているので、Drizzle が読み出し時に `JSON.parse` し、書き込み時に `JSON.stringify` する。
+`store.ts` の外には `string[]` だけを渡す。
 
-reylo の採用は検証を兼ねる。
-reylo は 0.x 系で、前提とする TypeScript 7.1 もまだ安定版がないため、実装の途中で使えなくなる可能性がある。
-次のどれかに当たったら、Drizzle ORM に切り替える。
+#### reylo を採らなかった理由
 
-- D1 に対するクエリに、期待どおりの型が付かない。
-- Workers 向けのビルド（wrangler）や Vitest（`@cloudflare/vitest-pool-workers`）で `.sql` の import を解決できない。
-- 固定した TypeScript 7.1 の nightly で、型検査や oxlint の型情報を使うルールが動かない。
+当初は reylo で `.sql` ファイルのクエリを import し、型検査用のデータベースから型を導く方式を検討した。
+雛形のタスク（#30）で reylo 0.8.1 と TypeScript 7.1 の nightly（7.1.0-dev.20261121.1）を組み合わせて検証した結果は、次のとおりである。
 
-切り替えるときは、Drizzle のスキーマをこの節の SQL と同じ定義で書き、JSON の列は `text("relay_langs", { mode: "json" }).$type<string[]>()` として読み出し時に配列にする。
-クエリは3本程度なので、切り替えの影響は `settings/` の中に収まる。
-Drizzle にすると content mapper が要らなくなるので、TypeScript も 7.0 の安定版に戻せる。
+| 確かめたこと | 結果 |
+| --- | --- |
+| `tsc --noEmit --runExternalCode` でクエリに型が付くか | 付いた。存在しない列は型エラーになった |
+| wrangler のビルドと `wrangler dev` で `.sql` の import を解決できるか | esbuild と reylo のプラグインで custom build にすれば解決できた |
+| Vitest で `.sql` の import を解決できるか | reylo の Vite プラグインを足せば解決できた |
+| oxlint の型情報を使うルールが動くか | 動かなかった |
+
+oxlint の型情報を使うルールは `oxlint-tsgolint` が担う。
+`oxlint-tsgolint` の最新版（7.0.2008）は TypeScript 7.0.2 のコンパイラを組み込んでおり、7.1 の content mapper を実装していない。
+そのため `.sql` の import が `error` 型として扱われ、`no-unsafe-assignment` などのルールが誤検出する。
+誤検出を避けるにはクエリを扱うファイルで型情報を使うルールを外すしかなく、型情報を使うルールで検査するという「開発ツール」の方針と両立しない。
+この結果を受けて Drizzle を採った。
+Drizzle は通常の TypeScript で書けるので、content mapper が要らず、TypeScript も 7.0 の安定版を使える。
 
 ### マイグレーション
 
 `migrations/` に SQL を手で書き、`wrangler d1 migrations apply` で適用する。
+`drizzle-kit` でスキーマからマイグレーションを生成することはしない。
+マイグレーションの SQL を正本とし、`settings/schema.ts` はそれに合わせて手で書く。
 
-reylo はマイグレーションファイルを読まない。
-実際のデータベースに接続し、どんなテーブルと列があるかをデータベース自身に問い合わせて型を作る。
-そのため型検査の前に、マイグレーションを適用したデータベースファイル（SQLite）を用意しておき、`DATABASE_URL` で指す。
-
-```text
-migrations/*.sql（リポジトリで管理する正本）
-      │ マイグレーションを適用する
-      ▼
-型検査用の SQLite ファイル（git 管理外。毎回作り直す）
-      │ reylo がテーブルと列を問い合わせる
-      ▼
-.sql の import に型が付く
-```
-
-- 型検査用のファイルには、テーブルの構造だけがあればよい。データは入れない。
-- このファイルはリポジトリに置かず、`.gitignore` に入れる。バイナリなのでレビューで差分を読めず、マイグレーションと内容がずれても気付きにくいからである。毎回マイグレーションから作り直せば、ずれは起きない。
-- `wrangler d1 migrations apply --local` も手元にデータベースファイルを作るが、ファイル名を wrangler が決める（`.wrangler/state/` の下にハッシュ値の名前で置かれる）ため、`DATABASE_URL` で指し続けるのに向かない。型検査用のファイルは、決まったパスに別に作る。
-- 手元では型検査の前に、CI では型検査のステップの前に、このファイルを作り直す。
-
-具体的な手順は雛形のタスク（#30）で決める。
+スキーマとマイグレーションが食い違っても、型検査では気付けない。
+この食い違いは、`settings/store.ts` のテストで見つける。
+テストはマイグレーションを適用したローカルの D1 に対してクエリを実行するので、スキーマにあってテーブルにない列を読み書きすると失敗する（[テスト方針](./testing.md)の「単体（ソーシャル）」）。
 
 ## モジュールの分け方
 
@@ -202,7 +202,7 @@ src/
     relay.ts            中継ルートに沿って翻訳を順に呼ぶ
     languages.ts        m2m100 の対応言語一覧と言語コードの検証
   settings/
-    queries/            reylo で import する SQL
+    schema.ts           Drizzle のスキーマ（migrations/ の SQL と同じ定義）
     store.ts            D1 の読み書き
     route.ts            中継ルートの組み立てと表示用の文字列（例: ja 👉 en 👉 ja）
   discord/
@@ -212,7 +212,6 @@ scripts/
   register-commands.ts  コマンドの登録
 migrations/
   0001_create_channel_settings.sql
-.reylo.yaml
 ```
 
 依存の向きは `commands/` から `translation/`、`settings/`、`discord/` への一方向とする。
@@ -264,16 +263,20 @@ Workers AI は `wrangler dev` でも Cloudflare 側で実行されるため、�
 | 用途 | 採用 |
 | --- | --- |
 | パッケージマネージャ | pnpm |
-| 型検査 | TypeScript 7.1 の nightly（`tsc --noEmit --runExternalCode`）。content mapper を動かすため `--runExternalCode` を付ける |
+| 型検査 | TypeScript 7.0（`tsc --noEmit`） |
 | lint | oxlint（型情報を使うルールは `oxlint-tsgolint`） |
 | format | oxfmt |
-| テスト | Vitest（`@cloudflare/vitest-pool-workers`）。何をどこまでテストするかは #28 で決める |
+| テスト | Vitest（`@cloudflare/vitest-plugin`）。何をどこまでテストするかは [テスト方針](./testing.md) で定める |
 | CI | GitHub Actions で lint、format の検査、型検査、テストを実行する |
 
 lint と format は oxc のツールで揃える。
 `oxlint-tsgolint` は TypeScript 7 系と同じ Go 実装のコンパイラの上で動くため、型情報を使うルールも速く回せる。
 oxfmt は 1.0 に達していないので、版を固定し、更新時は差分を確かめてから上げる。
-テストは `@cloudflare/vitest-pool-workers` を使い、D1 を含めて Workers の実行環境で動かせるようにする。
+テストは `@cloudflare/vitest-plugin` を使い、D1 を含めて Workers の実行環境で動かせるようにする。
+`@cloudflare/vitest-plugin` は `@cloudflare/vitest-pool-workers` が改名したもので、旧名のパッケージは更新されない。
+
+プロジェクトの雛形は `pnpm create cloudflare` の hello-world テンプレート（TypeScript）から作り、上の表に合わせて差し替えた。
+テンプレートの Prettier の設定（タブ、シングルクォート、1行140文字）は oxfmt に移した。
 
 配備は当面、手元から `pnpm run deploy` で行う。
 GitHub Actions からの自動配備は、Cloudflare の API トークンを GitHub に置くことになるため、必要になった時点で検討する。

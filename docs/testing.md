@@ -5,7 +5,7 @@
 
 ## 実行環境
 
-すべてのテストを Vitest と `@cloudflare/vitest-pool-workers` で、Workers の実行環境（workerd）の上で動かす。
+すべてのテストを Vitest と `@cloudflare/vitest-plugin` で、Workers の実行環境（workerd）の上で動かす。
 署名検証は Web Crypto の Ed25519 を、設定の保存は D1 を使うため、Node.js で動かすと本番と違う API の上で確かめることになる。
 外部との境界を持たない純粋なモジュールも同じ環境で動かし、実行環境を1つに揃える。
 
@@ -51,7 +51,7 @@ flowchart LR
 ```
 
 ハンドラが呼ぶ下位のモジュールは本物を使い、Workers AI と Discord API だけを偽物にする。
-D1 は差し替えず、vitest-pool-workers が用意するローカルの D1 にマイグレーションを適用して使う。
+D1 は差し替えず、`@cloudflare/vitest-plugin` が用意するローカルの D1 にマイグレーションを適用して使う。
 SQL とスキーマの食い違いは偽物では見つからないので、`settings/store.ts` も単独ではなくこのレベルで確かめる。
 
 ### 結合
@@ -75,7 +75,7 @@ sequenceDiagram
 ```
 
 テストは Discord の代わりに署名付きの Request を作り、Worker の fetch handler に渡す。
-`/rt` の followup は `waitUntil` の中で送られるので、vitest-pool-workers の実行コンテキストを渡し、その完了を待ってから偽物の fetch が受け取った内容を確かめる。
+`/rt` の followup は `waitUntil` の中で送られるので、`@cloudflare/vitest-plugin` の実行コンテキストを渡し、その完了を待ってから偽物の fetch が受け取った内容を確かめる。
 
 ## 依存の差し替え
 
@@ -106,7 +106,7 @@ JSON の fixture を置かないのは、型の更新で項目が変わったと
 
 ## カバレッジ
 
-カバレッジは istanbul で測る（vitest-pool-workers は V8 のカバレッジに対応していない）。
+カバレッジは istanbul で測る（`@cloudflare/vitest-plugin` は V8 のカバレッジに対応していない）。
 全レベルのテストを1回の実行で合わせて測り、各レベルの対象ごとに目標を置く。
 
 | レベル | 範囲 | 目標 |
@@ -129,7 +129,7 @@ JSON の fixture を置かないのは、型の更新で項目が変わったと
 
 - lint（oxlint）
 - format の検査（oxfmt）
-- 型検査（型検査用のデータベースファイルを作り直してから実行する）
+- 型検査（tsc。`wrangler types` で生成した型が `wrangler.jsonc` と一致しているかも確かめる）
 - テスト（カバレッジの閾値を含む）
 
 実装タスクの完了条件は、この方針で定めたテストが揃い、これらがすべて通ることとする。

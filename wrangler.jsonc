@@ -1,0 +1,49 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ *
+ * 既定（--env なし）が開発用、`--env production` が本番。
+ * 本番を既定にしないのは、--env を付け忘れたときに本番へ配備されないようにするため。
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "re-translate-bot-dev",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-11-19",
+	"observability": {
+		"enabled": true,
+	},
+	"upload_source_maps": true,
+	// Workers AI はローカルで動かないので、wrangler dev でも Cloudflare 側で実行される。
+	"ai": { "binding": "AI", "remote": true },
+	"vars": {
+		"DISCORD_APPLICATION_ID": "982084046924439622",
+		"DISCORD_PUBLIC_KEY": "32542d3c95269d32193c1dbf9b8d112b9906922fa1ce3688280d5024ec02dabc",
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "re-translate-bot-dev",
+			"database_id": "89cf8f49-18a4-4320-beb9-7f7ba520cd44",
+			"migrations_dir": "migrations",
+		},
+	],
+	"env": {
+		"production": {
+			"name": "re-translate-bot",
+			"ai": { "binding": "AI", "remote": true },
+			"vars": {
+				"DISCORD_APPLICATION_ID": "981977773277061210",
+				"DISCORD_PUBLIC_KEY": "a501b9c0083a4defc6afff0785e53fc1d696c1bb7351f22cb99cc365bbac655e",
+			},
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "re-translate-bot",
+					"database_id": "d8c2e0ad-8881-4a84-b3f0-03fbac92394b",
+					"migrations_dir": "migrations",
+				},
+			],
+		},
+	},
+}
