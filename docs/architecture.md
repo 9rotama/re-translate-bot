@@ -197,7 +197,8 @@ src/
   errors.ts             Result の失敗側で使うエラーの種類。log.ts のイベント定義から導く
   commands/
     definitions.ts      コマンドの定義（名前、引数、説明文）。登録スクリプトと共有する
-    dispatch.ts         コマンド名からハンドラを選ぶ
+    dispatch.ts         コマンド名（サブコマンドを含む）を Interaction から取り出す
+    index.ts            コマンド名ごとのハンドラの一覧
     rt.ts
     settings.ts         show / relay / origin
     help.ts
@@ -291,8 +292,9 @@ Workers AI は `wrangler dev` でも Cloudflare 側で実行されるため、�
 
 `scripts/register-commands.ts` で、`commands/definitions.ts` の定義を Discord に登録する。
 
-- `PUT /applications/{application_id}/commands` で、グローバルコマンドを一括で上書きする。定義から消したコマンドは Discord 側からも消える。
-- 開発用と本番で同じスクリプトを使い、読み込む環境変数のファイルで切り替える（例: `node --env-file=.env.development.local scripts/register-commands.ts`）。Node.js は型注釈を取り除いて `.ts` を直接実行できるので、ビルドの手順は要らない。
+- 開発用はギルドコマンド（`PUT /applications/{application_id}/guilds/{guild_id}/commands`）、本番はグローバルコマンド（`PUT /applications/{application_id}/commands`）として一括で上書きする。定義から消したコマンドは Discord 側からも消える。開発用をギルドコマンドにするのは、開発中のコマンドを試すギルドの外に出さないためである。
+- 開発用と本番で同じスクリプトを使い、読み込む環境変数のファイルで切り替える。`pnpm run commands:register:dev` は `.env.development.local` を、`pnpm run commands:register` は `.env.production.local` を読む。Node.js は型注釈を取り除いて `.ts` を直接実行できるので、ビルドの手順は要らない。
+- 必要な環境変数は `.env.example` に一覧する。`.env.development.local` と `.env.production.local` は、これをコピーして値を入れる。`DISCORD_GUILD_ID` は開発用にだけ書き、書いたときにギルドコマンドとして登録する。
 - 実行は手動とし、コマンドの定義を変えたときにだけ走らせる。Worker の配備ごとに登録し直す必要はない。
 
 定義をハンドラと登録スクリプトで共有するのは、登録した引数名とハンドラが読む引数名の食い違いを防ぐためである。
