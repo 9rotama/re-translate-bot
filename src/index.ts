@@ -9,7 +9,7 @@ import {
 import { isChatInputApplicationCommandInteraction, isGuildInteraction } from 'discord-api-types/utils/v10';
 import { resolveCommand } from './commands/dispatch';
 import { handlers } from './commands/index';
-import { errorDetails, interactionPlace, log, type Place } from './log';
+import { errorDetails, interactionPlace, log } from './log';
 import { importPublicKey, verifySignature } from './verify';
 
 // 署名を検証できた本文は Discord が組み立てたものなので、振り分けに使う type だけを確かめ、ほかの項目は型を信じる。
@@ -27,7 +27,10 @@ function asGuildChatInput(interaction: APIInteraction): APIChatInputApplicationC
 // env の値は isolate の中で変わらないので、鍵は isolate ごとに1回だけ import する。
 let publicKey: Promise<CryptoKey> | undefined;
 
-async function handle(request: Request, env: Env, ctx: ExecutionContext, place: Place): Promise<Response> {
+// 外側で例外を記録するときに失敗の場所を付けられるよう、読み取った Interaction を呼び出し側に残す。
+type Received = { interaction?: APIInteraction };
+
+async function handle(request: Request, env: Env, ctx: ExecutionContext, received: Received): Promise<Response> {
 	publicKey ??= importPublicKey(env.DISCORD_PUBLIC_KEY);
 	const [body, key] = await Promise.all([request.text(), publicKey]);
 	const verified = await verifySignature(request.headers, body, key);
@@ -38,11 +41,11 @@ async function handle(request: Request, env: Env, ctx: ExecutionContext, place: 
 
 	const interaction: unknown = JSON.parse(body);
 	if (!isInteraction(interaction)) return new Response(null, { status: 400 });
-	Object.assign(place, interactionPlace(interaction));
+	received.interaction = interaction;
 
 	const commandInteraction = asGuildChatInput(interaction);
 	const command = commandInteraction === undefined ? undefined : resolveCommand(commandInteraction);
-	log({ event: 'interaction.received', interactionType: interaction.type, command, ...place });
+	log({ event: 'interaction.received', interactionType: interaction.type, command, ...interactionPlace(interaction) });
 
 	if (interaction.type === InteractionType.Ping) {
 		return Response.json({ type: InteractionResponseType.Pong });
@@ -58,11 +61,11 @@ export default {
 		if (request.method !== 'POST') {
 			return new Response(null, { status: 405, headers: { Allow: 'POST' } });
 		}
-		const place: Place = {};
+		const received: Received = {};
 		try {
-			return await handle(request, env, ctx, place);
+			return await handle(request, env, ctx, received);
 		} catch (error) {
-			log({ event: 'unhandled_error', where: 'fetch', ...place, ...errorDetails(error) });
+			log({ event: 'unhandled_error', where: 'fetch', ...interactionPlace(received.interaction ?? {}), ...errorDetails(error) });
 			return new Response(null, { status: 500 });
 		}
 	},
