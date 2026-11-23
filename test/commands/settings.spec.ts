@@ -11,13 +11,24 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { invalidSettingsMessage, settingsOrigin, settingsRelay, settingsShow } from '../../src/commands/settings';
 import { reply, settingsUnavailableReply, type ContainerMessage } from '../../src/discord/response';
-import { readSettings, writeOriginLang, writeRelayLangs } from '../../src/settings/store';
+import { defaultSettings, readSettings, type ChannelSettings } from '../../src/settings/store';
 import { spyConsole } from '../helpers/console';
 import { GUILD_ID, commandInteraction, subcommand } from '../helpers/interactions';
 
 // テストどうしで行を共有しないよう、テストごとに別のチャンネル ID を使う。
 let nextChannel = 200000000000000000n;
 const newChannelId = () => String(nextChannel++);
+
+// 書き込みの関数は検証に使った設定を求めるので、前提の設定は SQL で直接入れる。
+// prepare を差し替えるテストでも使えるよう、差し替える前の prepare を受け取れるようにする。
+function seed(channelId: string, settings: Partial<ChannelSettings>, prepare = env.DB.prepare.bind(env.DB)) {
+	const { originLang, relayLangs } = { ...defaultSettings, ...settings };
+	return prepare(
+		'insert into channel_settings (channel_id, origin_lang, relay_langs, updated_at) values (?, ?, ?, 0) on conflict (channel_id) do update set origin_lang = excluded.origin_lang, relay_langs = excluded.relay_langs',
+	)
+		.bind(channelId, originLang, JSON.stringify(relayLangs))
+		.run();
+}
 
 const showInteraction = (channelId: string): APIChatInputApplicationCommandGuildInteraction => ({
 	...commandInteraction('settings', subcommand('show')),
@@ -45,8 +56,7 @@ describe('/settings show', () => {
 
 	it('保存した原文の言語と中継言語からルートを組み立てて見せる', async () => {
 		const channelId = newChannelId();
-		await writeRelayLangs(env.DB, channelId, ['en', 'fr']);
-		await writeOriginLang(env.DB, channelId, 'ko');
+		await seed(channelId, { originLang: 'ko', relayLangs: ['en', 'fr'] });
 
 		expect(await settingsShow(showInteraction(channelId), env)).toEqual(routeReply('ko -> en -> fr -> ko'));
 	});
@@ -68,7 +78,7 @@ describe('/settings show', () => {
 	describe('保存済みの設定からルートを組み立てられないとき', () => {
 		it('対応していない言語コードを挙げて設定し直すよう、呼び出した本人だけに伝え、settings.invalid を記録する', async () => {
 			const channelId = newChannelId();
-			await writeRelayLangs(env.DB, channelId, ['en', 'XX', 'yy']);
+			await seed(channelId, { relayLangs: ['en', 'XX', 'yy'] });
 
 			const response = await settingsShow(showInteraction(channelId), env);
 
@@ -83,7 +93,7 @@ describe('/settings show', () => {
 
 		it('同じ言語が続くルートを示して設定し直すよう、呼び出した本人だけに伝え、settings.invalid を記録する', async () => {
 			const channelId = newChannelId();
-			await writeRelayLangs(env.DB, channelId, ['ja', 'en']);
+			await seed(channelId, { relayLangs: ['ja', 'en'] });
 
 			const response = await settingsShow(showInteraction(channelId), env);
 
@@ -165,6 +175,29 @@ function failWrites() {
 	});
 }
 
+// 書き込みの直前に、他の人が設定を変えたことにする。change は何度目の書き込みかを受け取り、変える設定を返す。
+// 返さなければ変えない。prepare は同期で返すので、変更は書き込みを実行するときに待つ。
+function changeBeforeWrites(channelId: string, change: (attempt: number) => Partial<ChannelSettings> | undefined) {
+	const prepare = env.DB.prepare.bind(env.DB);
+	let attempt = 0;
+	const delayed = (statement: D1PreparedStatement): D1PreparedStatement =>
+		new Proxy(statement, {
+			get(target, property) {
+				const value: unknown = Reflect.get(target, property);
+				if (typeof value !== 'function') return value;
+				if (property === 'bind') return (...values: unknown[]) => delayed(target.bind(...values));
+				return async (...args: unknown[]) => {
+					const settings = change(attempt++);
+					if (settings !== undefined) await seed(channelId, settings, prepare);
+					return Reflect.apply(value, target, args) as unknown;
+				};
+			},
+		});
+	vi.spyOn(env.DB, 'prepare').mockImplementation((query: string) =>
+		query.startsWith('insert') ? delayed(prepare(query)) : prepare(query),
+	);
+}
+
 function failReads() {
 	vi.spyOn(env.DB, 'prepare').mockImplementation(() => {
 		throw new TypeError('原文');
@@ -186,7 +219,7 @@ describe('/settings relay', () => {
 
 	it('設定済みの原文の言語を両端に置いたルートを示す', async () => {
 		const channelId = newChannelId();
-		await writeOriginLang(env.DB, channelId, 'ko');
+		await seed(channelId, { originLang: 'ko' });
 
 		const response = await relay('de', channelId);
 
@@ -239,7 +272,7 @@ describe('/settings relay', () => {
 			['同じ言語が続く', 'ja en', '### エラー\n同じ言語が続くルートは設定できません\n```ja -> ja -> en -> ja```'],
 		])('%sときは、本人だけにエラーを見せ、設定を変えない', async (_, langs, text) => {
 			const channelId = newChannelId();
-			await writeRelayLangs(env.DB, channelId, ['de']);
+			await seed(channelId, { relayLangs: ['de'] });
 
 			const response = await relay(langs, channelId);
 
@@ -259,6 +292,21 @@ describe('/settings relay', () => {
 
 			expect(textOf(response)).toContain(`\`${'x'.repeat(16)}…\``);
 			expect(textOf(response).length).toBeLessThan(200);
+		});
+
+		it('結合文字を重ねて1書記素が長くなった言語コードも、文字数で切り詰めて示す', async () => {
+			const langs = Array.from({ length: 10 }, () => `x${'\u0301'.repeat(599)}`).join(' ');
+
+			const response = await relay(langs, newChannelId());
+
+			expect(textOf(response)).toContain(`\`x${'\u0301'.repeat(63)}…\``);
+			expect(textOf(response).length).toBeLessThan(1000);
+		});
+
+		it('1書記素だけで文字数の上限を超えても、サロゲートペアを割らずに切り詰めて示す', async () => {
+			const response = await relay(`😀${'\u0301'.repeat(100)}`, newChannelId());
+
+			expect(textOf(response)).toContain(`\`😀${'\u0301'.repeat(62)}…\``);
 		});
 	});
 
@@ -281,27 +329,45 @@ describe('/settings relay', () => {
 			expect(textOf(response)).toBe(SETTINGS_UNAVAILABLE);
 			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'd1.failed', operation: 'settings.upsert_relay' }));
 		});
+	});
 
-		it('結合文字を重ねて1書記素が長くなった言語コードも、文字数で切り詰めて示す', async () => {
-			const langs = Array.from({ length: 10 }, () => `x${'\u0301'.repeat(599)}`).join(' ');
+	describe('他の人が同時に設定を変えたとき', () => {
+		it('読んでから書くまでに原文の言語が変わったら、変わった後の設定で検証し直し、同じ言語が続くなら断る', async () => {
+			const channelId = newChannelId();
+			changeBeforeWrites(channelId, (attempt) => (attempt === 0 ? { originLang: 'fr' } : undefined));
 
-			const response = await relay(langs, newChannelId());
+			const response = await relay('fr', channelId);
 
-			expect(textOf(response)).toContain(`\`x${'\u0301'.repeat(63)}…\``);
-			expect(textOf(response).length).toBeLessThan(1000);
+			expect(textOf(response)).toBe('### エラー\n同じ言語が続くルートは設定できません\n```fr -> fr -> fr```');
+			expect(await settingsOf(channelId)).toEqual({ originLang: 'fr', relayLangs: ['en'] });
 		});
 
-		it('1書記素だけで文字数の上限を超えても、サロゲートペアを割らずに切り詰めて示す', async () => {
-			const response = await relay(`😀${'\u0301'.repeat(100)}`, newChannelId());
+		it('読んでから書くまでに原文の言語が変わっても、検証し直して通れば保存し、変わった後の原文の言語でルートを示す', async () => {
+			const channelId = newChannelId();
+			changeBeforeWrites(channelId, (attempt) => (attempt === 0 ? { originLang: 'ko' } : undefined));
 
-			expect(textOf(response)).toContain(`\`😀${'\u0301'.repeat(62)}…\``);
+			const response = await relay('fr', channelId);
+
+			expect(textOf(response)).toBe('### 中継言語を設定しました\n```ko -> fr -> ko```');
+		});
+
+		it('書くたびに設定が変わり続けたら、3回で諦めて本人だけにエラーを見せ、settings.conflict を記録する', async () => {
+			const channelId = newChannelId();
+			changeBeforeWrites(channelId, (attempt) => ({ originLang: attempt % 2 === 0 ? 'ko' : 'de' }));
+
+			const response = await relay('fr', channelId);
+
+			expect(textOf(response)).toBe(SETTINGS_UNAVAILABLE);
+			expect(isEphemeral(response)).toBe(true);
+			expect(await settingsOf(channelId)).toMatchObject({ relayLangs: ['en'] });
+			expect(spies.warn).toHaveBeenCalledWith(expect.objectContaining({ event: 'settings.conflict', channelId }));
 		});
 	});
 
 	describe('保存済みの設定に誤りがあるとき', () => {
 		it('誤りを直す入力なら保存し、更新後のルートをチャンネルの全員に見せる', async () => {
 			const channelId = newChannelId();
-			await writeRelayLangs(env.DB, channelId, ['zz']);
+			await seed(channelId, { relayLangs: ['zz'] });
 
 			const response = await relay('en', channelId);
 
@@ -311,7 +377,7 @@ describe('/settings relay', () => {
 
 		it('保存済みの原文の言語にだけ誤りがあれば入力を保存し、成功とともに残りの誤りと直し方を全員に見せて settings.invalid を記録する', async () => {
 			const channelId = newChannelId();
-			await writeOriginLang(env.DB, channelId, 'zz');
+			await seed(channelId, { originLang: 'zz' });
 
 			const response = await relay('EN', channelId);
 
@@ -327,7 +393,7 @@ describe('/settings relay', () => {
 
 		it('入力にも対応していない言語コードがあれば、入力の分だけを挙げて断る', async () => {
 			const channelId = newChannelId();
-			await writeOriginLang(env.DB, channelId, 'zz');
+			await seed(channelId, { originLang: 'zz' });
 
 			const response = await relay('en xx', channelId);
 
@@ -342,7 +408,7 @@ describe('/settings origin', () => {
 
 	it('原文の言語を保存し、更新後のルートをチャンネルの全員に見せる', async () => {
 		const channelId = newChannelId();
-		await writeRelayLangs(env.DB, channelId, ['en', 'fr']);
+		await seed(channelId, { relayLangs: ['en', 'fr'] });
 
 		const response = await origin('ko', channelId);
 
@@ -373,7 +439,7 @@ describe('/settings origin', () => {
 			['中継言語と同じ言語の', 'en', '### エラー\n同じ言語が続くルートは設定できません\n```en -> en -> en```'],
 		])('%sときは、本人だけにエラーを見せ、設定を変えない', async (_, lang, text) => {
 			const channelId = newChannelId();
-			await writeRelayLangs(env.DB, channelId, ['en']);
+			await seed(channelId, { relayLangs: ['en'] });
 
 			const response = await origin(lang, channelId);
 
@@ -404,10 +470,33 @@ describe('/settings origin', () => {
 		});
 	});
 
+	describe('他の人が同時に設定を変えたとき', () => {
+		it('読んでから書くまでに中継言語が変わったら、変わった後の設定で検証し直し、同じ言語が続くなら断る', async () => {
+			const channelId = newChannelId();
+			changeBeforeWrites(channelId, (attempt) => (attempt === 0 ? { relayLangs: ['fr'] } : undefined));
+
+			const response = await origin('fr', channelId);
+
+			expect(textOf(response)).toBe('### エラー\n同じ言語が続くルートは設定できません\n```fr -> fr -> fr```');
+			expect(await settingsOf(channelId)).toEqual({ originLang: 'ja', relayLangs: ['fr'] });
+		});
+
+		it('書くたびに設定が変わり続けたら、3回で諦めて本人だけにエラーを見せ、settings.conflict を記録する', async () => {
+			const channelId = newChannelId();
+			changeBeforeWrites(channelId, (attempt) => ({ relayLangs: [attempt % 2 === 0 ? 'ko' : 'de'] }));
+
+			const response = await origin('fr', channelId);
+
+			expect(textOf(response)).toBe(SETTINGS_UNAVAILABLE);
+			expect(await settingsOf(channelId)).toMatchObject({ originLang: 'ja' });
+			expect(spies.warn).toHaveBeenCalledWith(expect.objectContaining({ event: 'settings.conflict', channelId }));
+		});
+	});
+
 	describe('保存済みの設定に誤りがあるとき', () => {
 		it('誤りを直す入力なら保存し、更新後のルートをチャンネルの全員に見せる', async () => {
 			const channelId = newChannelId();
-			await writeOriginLang(env.DB, channelId, 'zz');
+			await seed(channelId, { originLang: 'zz' });
 
 			const response = await origin('ko', channelId);
 
@@ -417,7 +506,7 @@ describe('/settings origin', () => {
 
 		it('保存済みの中継言語にだけ誤りがあれば入力を保存し、成功とともに残りの誤りと直し方を全員に見せて settings.invalid を記録する', async () => {
 			const channelId = newChannelId();
-			await writeRelayLangs(env.DB, channelId, ['zz']);
+			await seed(channelId, { relayLangs: ['zz'] });
 
 			const response = await origin('KO', channelId);
 
@@ -433,7 +522,7 @@ describe('/settings origin', () => {
 
 		it('同じ言語が続いているのが保存済みの中継言語どうしだけなら、入力を保存し、成功とともに続いているルートを全員に見せる', async () => {
 			const channelId = newChannelId();
-			await writeRelayLangs(env.DB, channelId, ['en', 'en']);
+			await seed(channelId, { relayLangs: ['en', 'en'] });
 
 			const response = await origin('ko', channelId);
 
@@ -446,7 +535,7 @@ describe('/settings origin', () => {
 
 		it('入力の原文の言語が中継言語と続くなら、保存済みの中継言語どうしが続いていても断る', async () => {
 			const channelId = newChannelId();
-			await writeRelayLangs(env.DB, channelId, ['en', 'en']);
+			await seed(channelId, { relayLangs: ['en', 'en'] });
 
 			const response = await origin('en', channelId);
 
@@ -456,8 +545,7 @@ describe('/settings origin', () => {
 
 		it('原文の言語と中継言語の両方に誤りがあっても、2つのコマンドで順に直せる', async () => {
 			const channelId = newChannelId();
-			await writeOriginLang(env.DB, channelId, 'zz');
-			await writeRelayLangs(env.DB, channelId, ['yy']);
+			await seed(channelId, { originLang: 'zz', relayLangs: ['yy'] });
 
 			await origin('ja', channelId);
 			const response = await relay('en', channelId);

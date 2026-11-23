@@ -11,7 +11,7 @@ import {
 } from '../discord/response';
 import { interactionPlace, log } from '../log';
 import { formatRoute, toRoute, type RouteError } from '../settings/route';
-import { readSettings, writeOriginLang, writeRelayLangs, type ChannelSettings, type StoreError } from '../settings/store';
+import { readSettings, writeOriginLang, writeRelayLangs, type ChannelSettings, type StoreError, type WriteResult } from '../settings/store';
 import { LANGUAGE_TABLE_URL } from '../translation/languages';
 import type { Route } from '../translation/relay';
 import { stringOption } from './dispatch';
@@ -146,22 +146,48 @@ function updatedReply(interaction: Interaction, heading: string, settings: Chann
 	return reply(containerMessage({ heading, body: codeBlock(formatRoute(route.value)) }), 'public');
 }
 
+// 他の人が同時に設定を変え続けても応答が遅れすぎないよう、読み直す回数を抑える。
+const MAX_WRITE_ATTEMPTS = 3;
+
+// 読んで、検証して、検証に使った設定が変わっていないときだけ書く。
+// 書くまでに変わっていたら、変わった後の設定で検証し直す。検証を通った入力が、他の人の変更と合わさって禁止したルートになるのを防ぐため。
+async function updateSettings(
+	interaction: Interaction,
+	env: Env,
+	heading: string,
+	checkInput: (current: ChannelSettings) => Check,
+	write: (current: ChannelSettings) => Promise<WriteResult>,
+): Promise<APIInteractionResponse> {
+	for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
+		const current = await readSettings(env.DB, interaction.channel.id);
+		if (!current.ok) return storeFailed(interaction, current.error);
+		const checked = checkInput(current.value);
+		if (!checked.ok) return checked.reply;
+
+		const updated = await write(current.value);
+		if (!updated.ok) return storeFailed(interaction, updated.error);
+		if (updated.value !== undefined) return updatedReply(interaction, heading, updated.value);
+	}
+	// 時間をおけば書けるので、読み書きの失敗と同じ案内をする。
+	log({ event: 'settings.conflict', ...interactionPlace(interaction) });
+	return settingsUnavailableReply();
+}
+
 export async function settingsRelay(interaction: Interaction, env: Env): Promise<APIInteractionResponse> {
 	// 必須の引数なので届かないことはまずないが、届かなければ空の入力と同じく入力を促す。
 	const inputs = splitCodes(stringOption(interaction, 'settings relay', 'langs') ?? '');
 	if (inputs.length === 0) return errorReply('言語コードを入力してください');
 	if (inputs.length > MAX_RELAY_LANGS) return errorReply('中継言語に設定できるのは10ヶ国語までです');
 
-	const current = await readSettings(env.DB, interaction.channel.id);
-	if (!current.ok) return storeFailed(interaction, current.error);
-	// 中継言語を置き換えると、ルートの隣り合う組はどれも入力を含む。
-	const checked = check({ originLang: current.value.originLang, relayLangs: inputs }, inputs, () => false);
-	if (!checked.ok) return checked.reply;
-
 	const relayLangs = inputs.map((input) => input.toLowerCase());
-	const updated = await writeRelayLangs(env.DB, interaction.channel.id, relayLangs);
-	if (!updated.ok) return storeFailed(interaction, updated.error);
-	return updatedReply(interaction, '中継言語を設定しました', updated.value);
+	return updateSettings(
+		interaction,
+		env,
+		'中継言語を設定しました',
+		// 中継言語を置き換えると、ルートの隣り合う組はどれも入力を含む。
+		(current) => check({ originLang: current.originLang, relayLangs: inputs }, inputs, () => false),
+		(current) => writeRelayLangs(env.DB, interaction.channel.id, relayLangs, current),
+	);
 }
 
 // 原文の言語は両端にだけ現れるので、両端の組で続いていなければ、続いているのは保存済みの中継言語どうしである。
@@ -173,12 +199,11 @@ export async function settingsOrigin(interaction: Interaction, env: Env): Promis
 	if (input === undefined) return errorReply('言語コードを入力してください');
 	if (inputs.length > 1) return errorReply('原文の言語は1ヶ国語のみ入力してください');
 
-	const current = await readSettings(env.DB, interaction.channel.id);
-	if (!current.ok) return storeFailed(interaction, current.error);
-	const checked = check({ originLang: input, relayLangs: current.value.relayLangs }, inputs, repeatedOnlyInRelay);
-	if (!checked.ok) return checked.reply;
-
-	const updated = await writeOriginLang(env.DB, interaction.channel.id, input.toLowerCase());
-	if (!updated.ok) return storeFailed(interaction, updated.error);
-	return updatedReply(interaction, '原文の言語を設定しました', updated.value);
+	return updateSettings(
+		interaction,
+		env,
+		'原文の言語を設定しました',
+		(current) => check({ originLang: input, relayLangs: current.relayLangs }, inputs, repeatedOnlyInRelay),
+		(current) => writeOriginLang(env.DB, interaction.channel.id, input.toLowerCase(), current),
+	);
 }
