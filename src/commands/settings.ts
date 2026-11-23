@@ -68,15 +68,36 @@ export async function settingsShow(interaction: APIChatInputApplicationCommandGu
 const MAX_RELAY_LANGS = 10;
 
 // 引数の文字列は 6000 文字まで入るので、そのまま並べると TextDisplay の上限（4000 文字）を超えて応答ごと拒まれる。
-// 本物の言語コードは 3 文字以内なので、打ち間違いを見せるには 16 文字あれば足りる。
-const MAX_DISPLAYED_CODE_LENGTH = 16;
+// 本物の言語コードは 3 文字以内なので、打ち間違いを見せるには 16 書記素あれば足りる。
+const MAX_DISPLAYED_GRAPHEMES = 16;
+// 結合文字を重ねると 1 書記素がいくらでも長くなるので、書記素の数とは別に文字数（UTF-16 の単位）でも抑える。
+// 中継言語の 10 個すべてがこの長さでも、TextDisplay の上限に収まる。
+const MAX_DISPLAYED_CODE_UNITS = 64;
 
 // 切り詰めは書記素の単位で行い、絵文字などを途中で割らない。
 const graphemes = new Intl.Segmenter();
 
+// 1 書記素だけで上限を超えるときは、サロゲートペアを割らないようコードポイントの単位で切る。
+function codePointsWithin(segment: string, budget: number): string {
+	let result = '';
+	for (const codePoint of segment) {
+		if (result.length + codePoint.length > budget) break;
+		result += codePoint;
+	}
+	return result;
+}
+
 function truncated(input: string): string {
-	const segments = Array.from(graphemes.segment(input), ({ segment }) => segment);
-	return segments.length > MAX_DISPLAYED_CODE_LENGTH ? `${segments.slice(0, MAX_DISPLAYED_CODE_LENGTH).join('')}…` : input;
+	let result = '';
+	let count = 0;
+	for (const { segment } of graphemes.segment(input)) {
+		if (count === MAX_DISPLAYED_GRAPHEMES || result.length + segment.length > MAX_DISPLAYED_CODE_UNITS) {
+			return `${result === '' ? codePointsWithin(segment, MAX_DISPLAYED_CODE_UNITS) : result}…`;
+		}
+		result += segment;
+		count += 1;
+	}
+	return result;
 }
 
 // \s は全角スペース（U+3000）も含む。

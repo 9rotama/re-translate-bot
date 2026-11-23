@@ -281,6 +281,21 @@ describe('/settings relay', () => {
 			expect(textOf(response)).toBe(SETTINGS_UNAVAILABLE);
 			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'd1.failed', operation: 'settings.upsert_relay' }));
 		});
+
+		it('結合文字を重ねて1書記素が長くなった言語コードも、文字数で切り詰めて示す', async () => {
+			const langs = Array.from({ length: 10 }, () => `x${'\u0301'.repeat(599)}`).join(' ');
+
+			const response = await relay(langs, newChannelId());
+
+			expect(textOf(response)).toContain(`\`x${'\u0301'.repeat(63)}…\``);
+			expect(textOf(response).length).toBeLessThan(1000);
+		});
+
+		it('1書記素だけで文字数の上限を超えても、サロゲートペアを割らずに切り詰めて示す', async () => {
+			const response = await relay(`😀${'\u0301'.repeat(100)}`, newChannelId());
+
+			expect(textOf(response)).toContain(`\`😀${'\u0301'.repeat(62)}…\``);
+		});
 	});
 
 	describe('保存済みの設定に誤りがあるとき', () => {
