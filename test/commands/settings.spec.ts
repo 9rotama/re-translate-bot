@@ -273,14 +273,38 @@ describe('/settings relay', () => {
 			expect(textOf(response)).toBe(SETTINGS_UNAVAILABLE);
 			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'd1.failed', operation: 'settings.upsert_relay' }));
 		});
+	});
 
-		it('保存済みの原文の言語が対応していないコードなら、入力の誤りとせずに設定の読み書きの失敗として扱う', async () => {
+	describe('保存済みの設定に誤りがあるとき', () => {
+		it('誤りを直す入力なら保存し、更新後のルートをチャンネルの全員に見せる', async () => {
 			const channelId = newChannelId();
-			await writeOriginLang(env.DB, channelId, 'zz');
+			await writeRelayLangs(env.DB, channelId, ['zz']);
 
 			const response = await relay('en', channelId);
 
-			expect(textOf(response)).toBe(SETTINGS_UNAVAILABLE);
+			expect(textOf(response)).toBe('### 中継言語を設定しました\n```ja -> en -> ja```');
+			expect(isEphemeral(response)).toBe(false);
+		});
+
+		it('保存済みの原文の言語にだけ誤りがあれば入力を保存し、残りの誤りと直し方を本人だけに見せて settings.invalid を記録する', async () => {
+			const channelId = newChannelId();
+			await writeOriginLang(env.DB, channelId, 'zz');
+
+			const response = await relay('EN', channelId);
+
+			expect(response).toEqual(reply(invalidSettingsMessage({ kind: 'unsupported_language', codes: ['zz'] }), 'private'));
+			expect(await settingsOf(channelId)).toEqual({ originLang: 'zz', relayLangs: ['en'] });
+			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'settings.invalid', errorKind: 'unsupported_language' }));
+		});
+
+		it('入力にも対応していない言語コードがあれば、入力の分だけを挙げて断る', async () => {
+			const channelId = newChannelId();
+			await writeOriginLang(env.DB, channelId, 'zz');
+
+			const response = await relay('en xx', channelId);
+
+			expect(textOf(response)).toBe(`### エラー\n対応していない言語コードがあります: \`xx\`\n${LANGUAGE_TABLE}`);
+			expect(await settingsOf(channelId)).toEqual({ originLang: 'zz', relayLangs: ['en'] });
 		});
 	});
 });
@@ -350,14 +374,59 @@ describe('/settings origin', () => {
 			expect(textOf(response)).toBe(SETTINGS_UNAVAILABLE);
 			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'd1.failed', operation: 'settings.upsert_origin' }));
 		});
+	});
 
-		it('保存済みの中継言語が対応していないコードなら、入力の誤りとせずに設定の読み書きの失敗として扱う', async () => {
+	describe('保存済みの設定に誤りがあるとき', () => {
+		it('誤りを直す入力なら保存し、更新後のルートをチャンネルの全員に見せる', async () => {
 			const channelId = newChannelId();
-			await writeRelayLangs(env.DB, channelId, ['zz']);
+			await writeOriginLang(env.DB, channelId, 'zz');
 
 			const response = await origin('ko', channelId);
 
-			expect(textOf(response)).toBe(SETTINGS_UNAVAILABLE);
+			expect(textOf(response)).toBe('### 原文の言語を設定しました\n```ko -> en -> ko```');
+			expect(isEphemeral(response)).toBe(false);
+		});
+
+		it('保存済みの中継言語にだけ誤りがあれば入力を保存し、残りの誤りと直し方を本人だけに見せて settings.invalid を記録する', async () => {
+			const channelId = newChannelId();
+			await writeRelayLangs(env.DB, channelId, ['zz']);
+
+			const response = await origin('KO', channelId);
+
+			expect(response).toEqual(reply(invalidSettingsMessage({ kind: 'unsupported_language', codes: ['zz'] }), 'private'));
+			expect(await settingsOf(channelId)).toEqual({ originLang: 'ko', relayLangs: ['zz'] });
+			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'settings.invalid', errorKind: 'unsupported_language' }));
+		});
+
+		it('同じ言語が続いているのが保存済みの中継言語どうしだけなら、入力を保存して続いているルートを本人だけに見せる', async () => {
+			const channelId = newChannelId();
+			await writeRelayLangs(env.DB, channelId, ['en', 'en']);
+
+			const response = await origin('ko', channelId);
+
+			expect(response).toEqual(reply(invalidSettingsMessage({ kind: 'repeated_language', route: ['ko', 'en', 'en', 'ko'] }), 'private'));
+			expect(await settingsOf(channelId)).toMatchObject({ originLang: 'ko' });
+		});
+
+		it('入力の原文の言語が中継言語と続くなら、保存済みの中継言語どうしが続いていても断る', async () => {
+			const channelId = newChannelId();
+			await writeRelayLangs(env.DB, channelId, ['en', 'en']);
+
+			const response = await origin('en', channelId);
+
+			expect(textOf(response)).toBe('### エラー\n同じ言語が続くルートは設定できません\n```en -> en -> en -> en```');
+			expect(await settingsOf(channelId)).toMatchObject({ originLang: 'ja' });
+		});
+
+		it('原文の言語と中継言語の両方に誤りがあっても、2つのコマンドで順に直せる', async () => {
+			const channelId = newChannelId();
+			await writeOriginLang(env.DB, channelId, 'zz');
+			await writeRelayLangs(env.DB, channelId, ['yy']);
+
+			await origin('ja', channelId);
+			const response = await relay('en', channelId);
+
+			expect(textOf(response)).toBe('### 中継言語を設定しました\n```ja -> en -> ja```');
 		});
 	});
 });
