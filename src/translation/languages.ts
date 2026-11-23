@@ -1,4 +1,6 @@
-// m2m100 の対応言語。コードは https://huggingface.co/facebook/m2m100_1.2B の一覧と同じ表記にする。
+export const LANGUAGE_TABLE_URL = 'https://huggingface.co/facebook/m2m100_1.2B';
+
+// m2m100 の対応言語。コードは LANGUAGE_TABLE_URL の一覧と同じ表記にする。
 export const LANGUAGE_CODES = [
 	'af',
 	'am',
