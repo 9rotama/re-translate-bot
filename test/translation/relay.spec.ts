@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { interactionPlace } from '../../src/log';
-import { relay, type Route, type TranslationAi } from '../../src/translation/relay';
+import { relay, textLength, type Route, type TranslationAi } from '../../src/translation/relay';
 
 type Call = { text: string; source_lang: string; target_lang: string };
 type Reply = (call: Call, signal: AbortSignal) => Promise<unknown>;
@@ -238,5 +238,18 @@ describe('relay', () => {
 			const output = JSON.stringify([...spies.log.mock.calls, ...spies.warn.mock.calls, ...spies.error.mock.calls]);
 			expect(output).not.toContain('こんにちは');
 		});
+	});
+});
+
+describe('textLength', () => {
+	it('書記素の数を数える', () => {
+		expect(textLength('こんにちは')).toBe(5);
+		expect(textLength('')).toBe(0);
+	});
+
+	it('絵文字の連結や結合文字を見た目の1文字として数える', () => {
+		expect(textLength('👨‍👩‍👧')).toBe(1);
+		expect(textLength('が')).toBe(1);
+		expect(textLength('🇯🇵a')).toBe(2);
 	});
 });

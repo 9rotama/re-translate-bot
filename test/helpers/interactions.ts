@@ -8,6 +8,7 @@ import {
 	GuildMemberFlags,
 	InteractionType,
 	Locale,
+	type APIApplicationCommandInteractionDataBasicOption,
 	type APIApplicationCommandInteractionDataOption,
 	type APIChatInputApplicationCommandGuildInteraction,
 	type APIPingInteraction,
@@ -42,9 +43,10 @@ export function pingInteraction(): APIPingInteraction {
 	};
 }
 
-export const subcommand = (name: string): APIApplicationCommandInteractionDataOption[] => [
-	{ type: ApplicationCommandOptionType.Subcommand, name },
-];
+export const subcommand = (
+	name: string,
+	options?: APIApplicationCommandInteractionDataBasicOption[],
+): APIApplicationCommandInteractionDataOption[] => [{ type: ApplicationCommandOptionType.Subcommand, name, options }];
 
 export function commandInteraction(
 	name: string,

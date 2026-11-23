@@ -208,7 +208,7 @@ src/
   settings/
     schema.ts           Drizzle のスキーマ（migrations/ の SQL と同じ定義）
     store.ts            D1 の読み書き
-    route.ts            中継ルートの組み立てと表示用の文字列（例: ja 👉 en 👉 ja）
+    route.ts            中継ルートの組み立てと表示用の文字列（例: ja -> en -> ja）
   discord/
     response.ts         Interaction への応答の組み立て
     followup.ts         遅延応答の後に元のメッセージを編集する

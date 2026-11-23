@@ -25,7 +25,7 @@ export type TranslationAi = {
 };
 
 // 原文の言語から中継言語を経て原文の言語に戻るので、少なくとも2つの言語を持つ。
-export type Route = readonly [LanguageCode, LanguageCode, ...LanguageCode[]];
+export type Route = readonly [LanguageCode, ...LanguageCode[], LanguageCode];
 
 export type RelayError = { readonly kind: TranslationStepErrorKind };
 
@@ -43,7 +43,7 @@ class DeadlineExceededError extends Error {
 
 // 文字数は書記素で数える。絵文字や結合文字を、見た目の1文字より多く数えないため。
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-const lengthOf = (text: string): number => Array.from(graphemes.segment(text)).length;
+export const textLength = (text: string): number => Array.from(graphemes.segment(text)).length;
 
 function translatedText(output: unknown): string | undefined {
 	if (typeof output !== 'object' || output === null || !('translated_text' in output)) return undefined;
@@ -90,13 +90,13 @@ async function translateStep(
 	{ step, steps, from, to, text }: Step,
 	{ ai, place, signal, deadline }: Attempt,
 ): Promise<Result<string, StepFailure>> {
-	const inputLength = lengthOf(text);
+	const inputLength = textLength(text);
 	for (let attempt = 1; ; attempt++) {
 		const startedAt = Date.now();
 		const result = await translateOnce(ai, { text, source_lang: from, target_lang: to }, signal, deadline);
 		const common = { step, steps, attempt, from, to, inputLength, durationMs: Date.now() - startedAt };
 		if (result.ok) {
-			log({ event: 'translation.step.succeeded', ...common, outputLength: lengthOf(result.value) });
+			log({ event: 'translation.step.succeeded', ...common, outputLength: textLength(result.value) });
 			return result;
 		}
 		log({
@@ -120,7 +120,7 @@ export async function relay(
 ): Promise<Result<string, RelayError>> {
 	const place = options.place ?? {};
 	const steps = route.length - 1;
-	const inputLength = lengthOf(text);
+	const inputLength = textLength(text);
 	const startedAt = Date.now();
 
 	const controller = new AbortController();
@@ -153,7 +153,7 @@ export async function relay(
 			}
 			current = result.value;
 		}
-		log({ event: 'translation.succeeded', steps, inputLength, outputLength: lengthOf(current), durationMs: Date.now() - startedAt });
+		log({ event: 'translation.succeeded', steps, inputLength, outputLength: textLength(current), durationMs: Date.now() - startedAt });
 		return ok(current);
 	} finally {
 		clearTimeout(timer);
