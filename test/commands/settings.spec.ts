@@ -136,6 +136,14 @@ function textOf(response: APIInteractionResponse): string {
 	return text.content;
 }
 
+// 応答の Container の中身を、contents と同じ形で並べる。
+function contentsOf(response: APIInteractionResponse): string[] {
+	if (response.type !== InteractionResponseType.ChannelMessageWithSource) throw new TypeError('type 4 の応答ではない');
+	const [container] = response.data.components ?? [];
+	if (container?.type !== ComponentType.Container) throw new TypeError('Container がない');
+	return container.components.map((component) => (component.type === ComponentType.TextDisplay ? component.content : '---'));
+}
+
 const isEphemeral = (response: APIInteractionResponse) =>
 	response.type === InteractionResponseType.ChannelMessageWithSource && ((response.data.flags ?? 0) & MessageFlags.Ephemeral) !== 0;
 
@@ -286,13 +294,18 @@ describe('/settings relay', () => {
 			expect(isEphemeral(response)).toBe(false);
 		});
 
-		it('保存済みの原文の言語にだけ誤りがあれば入力を保存し、残りの誤りと直し方を本人だけに見せて settings.invalid を記録する', async () => {
+		it('保存済みの原文の言語にだけ誤りがあれば入力を保存し、成功とともに残りの誤りと直し方を全員に見せて settings.invalid を記録する', async () => {
 			const channelId = newChannelId();
 			await writeOriginLang(env.DB, channelId, 'zz');
 
 			const response = await relay('EN', channelId);
 
-			expect(response).toEqual(reply(invalidSettingsMessage({ kind: 'unsupported_language', codes: ['zz'] }), 'private'));
+			expect(contentsOf(response)).toEqual([
+				'### 中継言語を設定しました\nこのチャンネルの設定に、対応していない言語コードがあります: `zz`\n/settings relay か /settings origin で設定し直してください',
+				'---',
+				LANGUAGE_TABLE,
+			]);
+			expect(isEphemeral(response)).toBe(false);
 			expect(await settingsOf(channelId)).toEqual({ originLang: 'zz', relayLangs: ['en'] });
 			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'settings.invalid', errorKind: 'unsupported_language' }));
 		});
@@ -387,24 +400,32 @@ describe('/settings origin', () => {
 			expect(isEphemeral(response)).toBe(false);
 		});
 
-		it('保存済みの中継言語にだけ誤りがあれば入力を保存し、残りの誤りと直し方を本人だけに見せて settings.invalid を記録する', async () => {
+		it('保存済みの中継言語にだけ誤りがあれば入力を保存し、成功とともに残りの誤りと直し方を全員に見せて settings.invalid を記録する', async () => {
 			const channelId = newChannelId();
 			await writeRelayLangs(env.DB, channelId, ['zz']);
 
 			const response = await origin('KO', channelId);
 
-			expect(response).toEqual(reply(invalidSettingsMessage({ kind: 'unsupported_language', codes: ['zz'] }), 'private'));
+			expect(contentsOf(response)).toEqual([
+				'### 原文の言語を設定しました\nこのチャンネルの設定に、対応していない言語コードがあります: `zz`\n/settings relay か /settings origin で設定し直してください',
+				'---',
+				LANGUAGE_TABLE,
+			]);
+			expect(isEphemeral(response)).toBe(false);
 			expect(await settingsOf(channelId)).toEqual({ originLang: 'ko', relayLangs: ['zz'] });
 			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'settings.invalid', errorKind: 'unsupported_language' }));
 		});
 
-		it('同じ言語が続いているのが保存済みの中継言語どうしだけなら、入力を保存して続いているルートを本人だけに見せる', async () => {
+		it('同じ言語が続いているのが保存済みの中継言語どうしだけなら、入力を保存し、成功とともに続いているルートを全員に見せる', async () => {
 			const channelId = newChannelId();
 			await writeRelayLangs(env.DB, channelId, ['en', 'en']);
 
 			const response = await origin('ko', channelId);
 
-			expect(response).toEqual(reply(invalidSettingsMessage({ kind: 'repeated_language', route: ['ko', 'en', 'en', 'ko'] }), 'private'));
+			expect(contentsOf(response)).toEqual([
+				'### 原文の言語を設定しました\nこのチャンネルの設定は、同じ言語が続くルートになっています\n```ko -> en -> en -> ko```\n/settings relay か /settings origin で設定し直してください',
+			]);
+			expect(isEphemeral(response)).toBe(false);
 			expect(await settingsOf(channelId)).toMatchObject({ originLang: 'ko' });
 		});
 

@@ -24,17 +24,24 @@ const RESET_GUIDE = '/settings relay か /settings origin で設定し直して�
 // エスケープしないのは、インラインコードの中ではバックスラッシュが効かないため。
 const inlineCode = (value: string): string => `\`${value.replaceAll('`', "'").replaceAll(/[\r\n]/g, ' ')}\``;
 
-// 保存済みの設定から中継ルートを組み立てられなかったとき（docs/interface.md の「保存済みの設定の誤り」）。
-// 公開範囲は呼び出し側で決める。/rt は翻訳中のエラーと同じく全員に見せる。
-export function invalidSettingsMessage(error: RouteError): ContainerMessage {
+// 保存済みの設定の誤りと直し方（docs/interface.md の「保存済みの設定の誤り」）。
+// /settings relay と /settings origin では、保存した後に残った誤りを成功の見出しの下に置くので、見出しとは分けて組み立てる。
+function invalidSettingsContent(error: RouteError): { readonly body: string; readonly footer?: string } {
 	if (error.kind === 'unsupported_language') {
 		const codes = error.codes.map(inlineCode).join('、');
-		return errorMessage(
-			`このチャンネルの設定に、対応していない言語コードがあります: ${codes}\n${RESET_GUIDE}`,
-			`言語コードの表 → ${LANGUAGE_TABLE_URL}`,
-		);
+		return {
+			body: `このチャンネルの設定に、対応していない言語コードがあります: ${codes}\n${RESET_GUIDE}`,
+			footer: `言語コードの表 → ${LANGUAGE_TABLE_URL}`,
+		};
 	}
-	return errorMessage(`このチャンネルの設定は、同じ言語が続くルートになっています\n${codeBlock(formatRoute(error.route))}\n${RESET_GUIDE}`);
+	return { body: `このチャンネルの設定は、同じ言語が続くルートになっています\n${codeBlock(formatRoute(error.route))}\n${RESET_GUIDE}` };
+}
+
+// 保存済みの設定から中継ルートを組み立てられなかったとき。
+// 公開範囲は呼び出し側で決める。/rt は翻訳中のエラーと同じく全員に見せる。
+export function invalidSettingsMessage(error: RouteError): ContainerMessage {
+	const { body, footer } = invalidSettingsContent(error);
+	return errorMessage(body, footer);
 }
 
 export async function settingsShow(interaction: APIChatInputApplicationCommandGuildInteraction, env: Env): Promise<APIInteractionResponse> {
@@ -107,12 +114,13 @@ function storeFailed(interaction: Interaction, error: StoreError): APIInteractio
 }
 
 // 書き込みが返した更新後の設定でルートを表示する。読んでから書くまでに他の人が設定を変えていても、保存された内容を示せる。
-// 保存済みの側がまだおかしいときは、残っている誤りと直し方を本人だけに見せる。
+// 保存済みの側に誤りが残っていても、変更は保存できていて全員の /rt に効くので、成功として全員に見せる。
+// ルートはまだ組み立てられないので、代わりに残っている誤りと直し方を示す。
 function updatedReply(interaction: Interaction, heading: string, settings: ChannelSettings): APIInteractionResponse {
 	const route = toRoute(settings);
 	if (!route.ok) {
 		log({ event: 'settings.invalid', errorKind: route.error.kind, ...interactionPlace(interaction) });
-		return reply(invalidSettingsMessage(route.error), 'private');
+		return reply(containerMessage({ heading, ...invalidSettingsContent(route.error) }), 'public');
 	}
 	return reply(containerMessage({ heading, body: codeBlock(formatRoute(route.value)) }), 'public');
 }
