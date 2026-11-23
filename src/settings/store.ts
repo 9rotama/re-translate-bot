@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
-import type { D1Operation, ErrorDetails } from '../errors';
-import { errorDetails } from '../log';
+import type { D1Operation } from '../errors';
+import { errorDetails, type ErrorDetails } from '../log';
 import { err, ok, type Result } from '../result';
 import { channelSettings } from './schema';
 
