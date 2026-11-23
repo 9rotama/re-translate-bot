@@ -164,6 +164,18 @@ export const logEvents = {
 			...errorFields,
 		},
 	},
+	'settings.invalid': {
+		level: 'error',
+		description: '保存済みの設定から中継ルートを組み立てられず、利用者にエラーを表示した',
+		fields: {
+			// 対応していないコードは言語コードの形の検査を通らない自由な文字列なので、値は出さず種類だけを出す。
+			errorKind: oneOf('組み立てられなかった理由', {
+				unsupported_language: '対応していない言語コードがある',
+				repeated_language: '同じ言語が続く',
+			}),
+			...placeFields,
+		},
+	},
 	unhandled_error: {
 		level: 'error',
 		description: '想定していない例外を最も外側で捕まえた',
