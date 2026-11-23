@@ -35,8 +35,8 @@
 						"patterns": [
 							{
 								"group": ["**/log", "**/log.ts"],
-								"allowImportNames": ["log", "errorDetails", "interactionPlace"],
-								"message": "log.ts の型からアプリの型を導くのは errors.ts だけに限る（docs/architecture.md の「エラーの扱い」）。"
+								"allowImportNames": ["log", "errorDetails", "interactionPlace", "Place", "ErrorDetails"],
+								"message": "log.ts から import できるのは log() を呼ぶための入力（log、errorDetails、interactionPlace、Place、ErrorDetails）だけに限る（docs/architecture.md の「エラーの扱い」）。"
 							}
 						]
 					}
@@ -56,8 +56,8 @@
 							},
 							{
 								"group": ["**/log", "**/log.ts"],
-								"allowImportNames": ["log", "errorDetails", "interactionPlace"],
-								"message": "log.ts の型からアプリの型を導くのは errors.ts だけに限る（docs/architecture.md の「エラーの扱い」）。"
+								"allowImportNames": ["log", "errorDetails", "interactionPlace", "Place", "ErrorDetails"],
+								"message": "log.ts から import できるのは log() を呼ぶための入力（log、errorDetails、interactionPlace、Place、ErrorDetails）だけに限る（docs/architecture.md の「エラーの扱い」）。"
 							}
 						]
 					}
@@ -65,7 +65,7 @@
 			}
 		},
 		{
-			"files": ["src/log.ts", "src/errors.ts"],
+			"files": ["src/log.ts"],
 			"rules": {
 				"no-restricted-imports": [
 					"error",
@@ -74,6 +74,27 @@
 							{
 								"group": ["**/commands", "**/commands/**"],
 								"message": "依存は commands/ から下の層への一方向に限る（docs/architecture.md の「モジュールの分け方」）。"
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"files": ["src/errors.ts"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"group": ["**/commands", "**/commands/**"],
+								"message": "依存は commands/ から下の層への一方向に限る（docs/architecture.md の「モジュールの分け方」）。"
+							},
+							{
+								"group": ["**/log", "**/log.ts"],
+								"allowImportNames": ["LogEvent"],
+								"message": "errors.ts が log.ts から import できるのは、エラーの種類を導くための LogEvent だけに限る（docs/architecture.md の「エラーの扱い」）。"
 							}
 						]
 					}
