@@ -240,6 +240,10 @@ Workers の binding（`env.AI`、`env.DB`）は、`translation/relay.ts` と `se
 `Result` の失敗側の型は、各モジュールが定義する。
 ログに出す失敗（Workers AI、D1、followup の失敗）は、エラーの種類に `errors.ts` の型を使う。
 この型は `log.ts` のイベント定義から導くので、ハンドリングで分ける粒度はログで見分ける粒度と同じになる。
+`log.ts` の型からアプリの型を導くのは `errors.ts` だけに限る。
+他のモジュールは `log.ts` から `log`、`errorDetails`、`interactionPlace` だけを import し、型が要るときは `errors.ts` を通す。
+ログの定義に引きずられる型をあちこちに作ると、ログの都合で変えたイベントの定義がアプリ全体の型を変えてしまうからである。
+この制限は oxlint の `no-restricted-imports` で検査し、`import()` 型での参照も `consistent-type-imports` で落とす。
 今の要件では扱いを変えたい失敗と後から見分けたい失敗が一致しているので、粒度が同じでも困らない。
 ハンドリングで細かく分けたくなったときは、ログのイベント定義も同じく細かくする。
 
@@ -299,6 +303,12 @@ Workers AI は `wrangler dev` でも Cloudflare 側で実行されるため、�
 lint と format は oxc のツールで揃える。
 `oxlint-tsgolint` は TypeScript 7 系と同じ Go 実装のコンパイラの上で動くため、型情報を使うルールも速く回せる。
 oxfmt は 1.0 に達していないので、版を固定し、更新時は差分を確かめてから上げる。
+
+`src/` では、lint を止めるコメント（`oxlint-disable` など）と型検査を止めるコメント（`@ts-ignore`、`@ts-expect-error`、`@ts-nocheck`）を使わない。
+止めたくなった箇所はコードを直すか、理由を添えて設定のほうを変える。設定に残せば、例外の範囲がレビューで一か所から見えるからである。
+この検査は `git grep` で行い（`pnpm run directives:check`）、`pnpm run lint` に含める。oxlint や ast-grep のルールで検査しないのは、どちらもファイル全体を止めるコメントを持ち、それがそのルールも止めてしまうためである。
+テストでは型の誤りを確かめるために `@ts-expect-error` を使うので、`test/` は対象にしない。
+
 テストは `@cloudflare/vitest-plugin` を使い、D1 を含めて Workers の実行環境で動かせるようにする。
 `@cloudflare/vitest-plugin` は `@cloudflare/vitest-pool-workers` が改名したもので、旧名のパッケージは更新されない。
 
