@@ -28,6 +28,33 @@ function fakeAi(reply?: (call: Call) => Promise<unknown>) {
 	return { ai, calls };
 }
 
+// 中断されるまで応答しない Workers AI。
+const stalledAi = (): TranslationAi => ({
+	run: (_model, _inputs, { signal }) =>
+		new Promise((_resolve, reject) => {
+			signal.addEventListener('abort', () => reject(signal.reason));
+		}),
+});
+
+// 結果の行を返す前に delay を待つ D1。delay が解決しなければ応答しない D1 になる。
+function delayD1(delay: () => Promise<void>): void {
+	const prepare = env.DB.prepare.bind(env.DB);
+	vi.spyOn(env.DB, 'prepare').mockImplementation((query) => {
+		const statement = prepare(query);
+		const bind = statement.bind.bind(statement);
+		vi.spyOn(statement, 'bind').mockImplementation((...values) => {
+			const bound = bind(...values);
+			const raw = bound.raw.bind(bound);
+			vi.spyOn(bound, 'raw').mockImplementation(async () => {
+				await delay();
+				return raw();
+			});
+			return bound;
+		});
+		return statement;
+	});
+}
+
 const upstreamError = (message: string) => Object.assign(new Error(message), { name: 'InferenceUpstreamError' });
 
 // レート制限のカウンタと設定の行をテストどうしで共有しないよう、ユーザーとチャンネルの ID をテストごとに変える。
@@ -94,9 +121,14 @@ const bodyOf = (init?: RequestInit): unknown => (typeof init?.body === 'string' 
 const sentBodies = (): unknown[] => fetchSpy.mock.calls.map(([, init]) => bodyOf(init));
 const sentBody = (): unknown => sentBodies().at(-1);
 
-async function run(interaction: APIChatInputApplicationCommandGuildInteraction, ai: TranslationAi, overrides: Partial<RtDeps> = {}) {
+async function run(
+	interaction: APIChatInputApplicationCommandGuildInteraction,
+	ai: TranslationAi,
+	overrides: Partial<RtDeps> = {},
+	timeoutMs?: number,
+) {
 	const { ctx, settled, pending } = fakeContext();
-	const response = await retranslate(interaction, deps(ai, overrides), ctx);
+	const response = await retranslate(interaction, deps(ai, overrides), ctx, timeoutMs);
 	await settled();
 	return { response, deferred: pending.length > 0 };
 }
@@ -311,6 +343,30 @@ describe('/rt', () => {
 			expect(sentBody()).toEqual(errorContainer('翻訳に失敗しました。時間をおいて試してください', 'こんにちは'));
 			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'd1.failed', operation: 'settings.read' }));
 			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'translation.failed', errorKind: 'settings_unavailable' }));
+		});
+
+		it('設定の読み取りが期限までに終わらなければ、待つのをやめて翻訳の失敗として表示し、d1.failed を記録する', async () => {
+			const { ai, calls } = fakeAi();
+			delayD1(() => new Promise(() => {}));
+
+			await run(rtInteraction({ text: 'こんにちは' }), ai, {}, 20);
+
+			expect(calls).toHaveLength(0);
+			expect(sentBody()).toEqual(errorContainer('翻訳に失敗しました。時間をおいて試してください', 'こんにちは'));
+			expect(spies.error).toHaveBeenCalledWith(
+				expect.objectContaining({ event: 'd1.failed', operation: 'settings.read', errorName: 'TimeoutError' }),
+			);
+		});
+
+		it('設定の読み取りにかかった時間は、翻訳の期限から差し引く', async () => {
+			delayD1(() => new Promise((resolve) => setTimeout(resolve, 150)));
+			const startedAt = Date.now();
+
+			await run(rtInteraction({ text: 'こんにちは' }), stalledAi(), {}, 200);
+
+			// 期限を翻訳だけで数えると、読み取りの 150ms と合わせて 350ms 以上かかる。
+			expect(Date.now() - startedAt).toBeLessThan(300);
+			expect(sentBody()).toEqual(errorContainer('翻訳に失敗しました。時間をおいて試してください', 'こんにちは'));
 		});
 
 		it('保存済みの設定からルートを組み立てられなければ、翻訳せずに翻訳の失敗として表示する', async () => {

@@ -14,8 +14,9 @@ import { errorMessage, errorReply } from '../discord/response';
 import type { TranslationErrorKind } from '../errors';
 import { errorDetails, interactionPlace, log, type Place } from '../log';
 import { formatRoute, toRoute } from '../settings/route';
-import { readSettings } from '../settings/store';
-import { relay, textLength, type Route, type TranslationAi } from '../translation/relay';
+import { readSettings, type ChannelSettings, type StoreError } from '../settings/store';
+import { err, type Result } from '../result';
+import { relay, textLength, TRANSLATION_DEADLINE_MS, type Route, type TranslationAi } from '../translation/relay';
 import { stringOption } from './dispatch';
 
 type Interaction = APIChatInputApplicationCommandGuildInteraction;
@@ -116,10 +117,28 @@ function settingsUnavailable({ text, place }: Job, startedAt: number): RESTPatch
 	return failureMessage('settings_unavailable', text);
 }
 
-async function translate(job: Job): Promise<RESTPatchAPIWebhookWithTokenMessageJSONBody> {
+// D1 の Promise は打ち切れないので、期限が来たら待つのをやめて読み取りの失敗として扱う。
+async function readSettingsBefore(db: D1Database, channelId: string, timeoutMs: number): Promise<Result<ChannelSettings, StoreError>> {
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	const timeout = new Promise<Result<ChannelSettings, StoreError>>((resolve) => {
+		timer = setTimeout(() => {
+			const error = new DOMException('settings read timed out', 'TimeoutError');
+			resolve(err({ operation: 'settings.read', details: errorDetails(error) }));
+		}, timeoutMs);
+	});
+	try {
+		return await Promise.race([readSettings(db, channelId), timeout]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+async function translate(job: Job, timeoutMs: number): Promise<RESTPatchAPIWebhookWithTokenMessageJSONBody> {
 	const { interaction, text, deps, place } = job;
 	const startedAt = Date.now();
-	const settings = await readSettings(deps.db, interaction.channel.id);
+	// 期限を relay() の中だけで数えると、D1 が遅いときに設定の読み取りの分だけ30秒の表示期限を超える。
+	// 設定を読む前から数え、翻訳には残りの時間だけを渡す。
+	const settings = await readSettingsBefore(deps.db, interaction.channel.id, timeoutMs);
 	if (!settings.ok) {
 		log({ event: 'd1.failed', operation: settings.error.operation, ...place, ...settings.error.details });
 		return settingsUnavailable(job, startedAt);
@@ -129,7 +148,8 @@ async function translate(job: Job): Promise<RESTPatchAPIWebhookWithTokenMessageJ
 	if (!route.ok) return settingsUnavailable(job, startedAt);
 
 	// relay() は失敗を自分で記録する。
-	const translated = await relay(deps.ai, text, route.value, { place });
+	const remainingMs = Math.max(0, timeoutMs - (Date.now() - startedAt));
+	const translated = await relay(deps.ai, text, route.value, { place, deadlineMs: remainingMs });
 	return translated.ok ? resultMessage(interaction, text, translated.value, route.value) : failureMessage(translated.error.kind, text);
 }
 
@@ -142,9 +162,9 @@ async function send({ interaction, deps, place }: Job, body: RESTPatchAPIWebhook
 	}
 }
 
-async function translateAndSend(job: Job): Promise<void> {
+async function translateAndSend(job: Job, timeoutMs: number): Promise<void> {
 	try {
-		await send(job, await translate(job));
+		await send(job, await translate(job, timeoutMs));
 	} catch (error) {
 		log({ event: 'unhandled_error', where: 'wait_until', ...job.place, ...errorDetails(error) });
 		// 「考え中」の表示のまま終わらせない（docs/non-functional.md の「応答時間」）。
@@ -156,6 +176,7 @@ export async function retranslate(
 	interaction: Interaction,
 	deps: RtDeps,
 	ctx: Pick<ExecutionContext, 'waitUntil'>,
+	timeoutMs: number = TRANSLATION_DEADLINE_MS,
 ): Promise<APIInteractionResponse> {
 	// text は必須の引数なので Discord からは必ず届くが、届かなかったときも空として扱う。
 	const text = stringOption(interaction, 'rt', 'text') ?? '';
@@ -169,7 +190,7 @@ export async function retranslate(
 	}
 
 	// 翻訳は Discord の応答期限（3秒）に間に合わないので、遅延応答を返してから続ける。
-	ctx.waitUntil(translateAndSend({ interaction, text, deps, place: interactionPlace(interaction) }));
+	ctx.waitUntil(translateAndSend({ interaction, text, deps, place: interactionPlace(interaction) }, timeoutMs));
 	return { type: InteractionResponseType.DeferredChannelMessageWithSource };
 }
 
