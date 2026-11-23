@@ -129,7 +129,7 @@ JSON の fixture を置かないのは、型の更新で項目が変わったと
 
 プルリクエストで次のすべてを必須のチェックにする。
 
-- lint（oxlint）
+- lint（oxlint と、`src/` に lint と型検査を止めるコメントがないかの検査）
 - format の検査（oxfmt）
 - 型検査（tsc。`wrangler types` で生成した型が `wrangler.jsonc` と一致しているか、`docs/log-events.md` が `src/log.ts` と一致しているかも確かめる）
 - テスト（カバレッジの閾値を含む）
