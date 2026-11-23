@@ -1,11 +1,16 @@
+import type { RouteErrorKind } from '../errors';
 import { err, ok, type Result } from '../result';
 import { toLanguageCode, type LanguageCode } from '../translation/languages';
 import type { Route } from '../translation/relay';
 import type { ChannelSettings } from './store';
 
-export type RouteError =
-	| { readonly kind: 'unsupported_language'; readonly codes: readonly string[] }
-	| { readonly kind: 'repeated_language'; readonly route: Route };
+// 種類は errors.ts から導き、種類ごとに持つ値だけをここで決める。
+// 種類を並べた union を手で書かないのは、ログの種類が増えたときに値の決め忘れを型検査で見つけるため。
+type RouteErrorValues = {
+	readonly unsupported_language: { readonly codes: readonly string[] };
+	readonly repeated_language: { readonly route: Route };
+};
+export type RouteError = { [K in RouteErrorKind]: { readonly kind: K } & RouteErrorValues[K] }[RouteErrorKind];
 
 const isSupported = (lang: LanguageCode | undefined): lang is LanguageCode => lang !== undefined;
 
