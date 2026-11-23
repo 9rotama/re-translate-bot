@@ -7,6 +7,7 @@ import {
 } from 'discord-api-types/v10';
 import type { CommandName } from './dispatch';
 import { help } from './help';
+import { rt } from './rt';
 import { settingsShow } from './settings';
 
 type Handler = (
@@ -21,7 +22,7 @@ const notImplemented: Handler = async (): Promise<APIInteractionResponse> => ({
 });
 
 export const handlers: Readonly<Record<CommandName, Handler>> = {
-	rt: notImplemented,
+	rt,
 	'settings show': settingsShow,
 	'settings relay': notImplemented,
 	'settings origin': notImplemented,

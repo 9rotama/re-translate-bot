@@ -1,6 +1,8 @@
-import { exports } from 'cloudflare:workers';
-import { InteractionResponseType, InteractionType } from 'discord-api-types/v10';
-import { describe, expect, it } from 'vitest';
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
+import { env, exports } from 'cloudflare:workers';
+import { ApplicationCommandOptionType, InteractionResponseType, InteractionType } from 'discord-api-types/v10';
+import { describe, expect, it, vi } from 'vitest';
+import worker from '../src/index';
 import { spyConsole } from './helpers/console';
 import { CHANNEL_ID, GUILD_ID, commandInteraction, pingInteraction, signedRequest, subcommand } from './helpers/interactions';
 
@@ -84,6 +86,28 @@ describe('fetch handler', () => {
 			const response = await fetchWorker(await signedRequest({ ...commandInteraction('help'), type: InteractionType.MessageComponent }));
 
 			expect(response.status).toBe(400);
+		});
+	});
+
+	describe('/rt', () => {
+		it('遅延応答（type 5）を返し、waitUntil の中で元の応答メッセージを結果の Embed に書き換える', async () => {
+			vi.spyOn(env.AI, 'run').mockResolvedValue({ translated_text: 'こんにちは' });
+			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 200 }));
+			const interaction = commandInteraction('rt', [{ type: ApplicationCommandOptionType.String, name: 'text', value: 'こんにちは' }]);
+			const ctx = createExecutionContext();
+
+			// fetch handler の型は Cloudflare が付ける cf の項目を持つ Request を受け取るので、その型で作り直す。
+			const request = new Request<unknown, IncomingRequestCfProperties>(await signedRequest(interaction));
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+
+			expect(await response.json()).toEqual({ type: InteractionResponseType.DeferredChannelMessageWithSource });
+			const [url, init] = fetchSpy.mock.calls[0] ?? [];
+			expect(url).toBe(`https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/interaction-token/messages/@original`);
+			expect(init?.method).toBe('PATCH');
+			expect(typeof init?.body === 'string' ? JSON.parse(init.body) : undefined).toMatchObject({
+				embeds: [{ description: 'こんにちは\n\n||原文: こんにちは||', footer: { text: 'ja -> en -> ja' } }],
+			});
 		});
 	});
 
