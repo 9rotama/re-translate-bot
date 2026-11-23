@@ -7,5 +7,6 @@ type FieldOf<E extends LogEvent['event'], K extends keyof Extract<LogEvent, { ev
 export type TranslationStepErrorKind = FieldOf<'translation.step.failed', 'errorKind'>;
 export type TranslationErrorKind = FieldOf<'translation.failed', 'errorKind'>;
 export type FollowupErrorKind = FieldOf<'followup.failed', 'errorKind'>;
+export type SignatureRejectionReason = FieldOf<'signature.rejected', 'reason'>;
 export type D1Operation = FieldOf<'d1.failed', 'operation'>;
 export type { ErrorDetails };
