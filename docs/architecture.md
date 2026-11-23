@@ -220,7 +220,7 @@ migrations/
 
 依存の向きは `commands/` から `translation/`、`settings/`、`discord/` への一方向とする。
 下の層は `commands/` を参照しない。
-`log.ts`、`result.ts`、`errors.ts` はどの層からも呼ばれる。`log.ts` と `result.ts` は他のモジュールを import せず、`errors.ts` は `log.ts` の型だけを import する。
+`log.ts`、`result.ts`、`errors.ts` はどの層からも呼ばれる。`log.ts` と `result.ts` は他のモジュールを import せず、`errors.ts` は `log.ts` の `LogEvent` だけを import する。
 この規則は oxlint の `no-restricted-imports` を `overrides` でディレクトリごとに設定して検査する。
 レビューで見落とすと逆向きの import が少しずつ増えていくので、CI で機械的に落とす。
 
@@ -239,10 +239,20 @@ Workers の binding（`env.AI`、`env.DB`）は、`translation/relay.ts` と `se
 `Result` の失敗側の型は、各モジュールが定義する。
 ログに出す失敗（Workers AI、D1、followup の失敗）は、エラーの種類に `errors.ts` の型を使う。
 この型は `log.ts` のイベント定義から導くので、ハンドリングで分ける粒度はログで見分ける粒度と同じになる。
-`log.ts` の型からアプリの型を導くのは `errors.ts` だけに限る。
-他のモジュールは `log.ts` から `log`、`errorDetails`、`interactionPlace` だけを import し、型が要るときは `errors.ts` を通す。
+`log.ts` の型からアプリの型を導くのは `errors.ts` だけに限り、`errors.ts` が `log.ts` から import するのも `LogEvent` だけにする。
+`errors.ts` から `log.ts` の型を re-export すると、`errors.ts` を中継して `log.ts` のどの型でもアプリ全体に流せてしまうからである。
+
+他のモジュールが `log.ts` から import できるのは、`log()` を呼ぶための入力だけとする。
+関数の `log`、`errorDetails`、`interactionPlace` と、型の `Place`、`ErrorDetails` である。
+ブランド付きの値（Guild の ID、例外から取り出した stack など）は、`interactionPlace()` が返す `Place` と `errorDetails()` が返す `ErrorDetails` のまとまりでしか手に入らない。
+そのため、境目で作った値を下の層の引数で受け取って `log()` に渡すための型名は、この 2 つで足りる。
+生の `guild_id` や `channel.id` を渡して下の層で `interactionPlace()` を呼び直す必要はない。
+
+`Place` と `ErrorDetails` は、受け取って `log()` に渡すためだけに使う。
+これらを材料にアプリの型を作ること（フィールドを取り出す、交差型や `Pick` で別の型に組み込むなど）はしない。
 ログの定義に引きずられる型をあちこちに作ると、ログの都合で変えたイベントの定義がアプリ全体の型を変えてしまうからである。
-この制限は oxlint の `no-restricted-imports` で検査し、`import()` 型での参照も `consistent-type-imports` で落とす。
+import できる名前の制限は oxlint の `no-restricted-imports` で検査し、`import()` 型での参照も `consistent-type-imports` で落とす。
+import した型をどう使うかは lint では検査できないので、レビューで確かめる。
 今の要件では扱いを変えたい失敗と後から見分けたい失敗が一致しているので、粒度が同じでも困らない。
 ハンドリングで細かく分けたくなったときは、ログのイベント定義も同じく細かくする。
 
