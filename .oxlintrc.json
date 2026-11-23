@@ -26,7 +26,46 @@
 			"rules": { "no-console": "off" }
 		},
 		{
-			"files": ["src/verify.ts", "src/log.ts", "src/result.ts", "src/errors.ts", "src/translation/**", "src/settings/**", "src/discord/**"],
+			"files": ["src/**"],
+			"rules": {
+				"typescript/consistent-type-imports": ["error", { "disallowTypeAnnotations": true }],
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"group": ["**/log", "**/log.ts"],
+								"allowImportNames": ["log", "errorDetails", "interactionPlace"],
+								"message": "log.ts の型からアプリの型を導くのは errors.ts だけに限る（docs/architecture.md の「エラーの扱い」）。"
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"files": ["src/verify.ts", "src/result.ts", "src/translation/**", "src/settings/**", "src/discord/**"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"patterns": [
+							{
+								"group": ["**/commands", "**/commands/**"],
+								"message": "依存は commands/ から下の層への一方向に限る（docs/architecture.md の「モジュールの分け方」）。"
+							},
+							{
+								"group": ["**/log", "**/log.ts"],
+								"allowImportNames": ["log", "errorDetails", "interactionPlace"],
+								"message": "log.ts の型からアプリの型を導くのは errors.ts だけに限る（docs/architecture.md の「エラーの扱い」）。"
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			"files": ["src/log.ts", "src/errors.ts"],
 			"rules": {
 				"no-restricted-imports": [
 					"error",

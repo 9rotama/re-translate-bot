@@ -240,6 +240,10 @@ Workers の binding（`env.AI`、`env.DB`）は、`translation/relay.ts` と `se
 ログに出す失敗（Workers AI、D1、followup の失敗）は、エラーの種類に `errors.ts` の型を使う。
 この型は `log.ts` のイベント定義から導くので、ハンドリングで分ける粒度はログで見分ける粒度と同じになる。
 今の要件では扱いを変えたい失敗と後から見分けたい失敗が一致しているので、粒度が同じでも困らない。
+`log.ts` の型からアプリの型を導くのは `errors.ts` だけに限る。
+他のモジュールは `log.ts` から `log`、`errorDetails`、`interactionPlace` だけを import し、型が要るときは `errors.ts` を通す。
+ログの定義に引きずられる型をあちこちに作ると、ログの都合で変えたイベントの定義がアプリ全体の型を変えてしまうからである。
+この制限は oxlint の `no-restricted-imports` で検査し、`import()` 型での参照も `consistent-type-imports` で落とす。
 ハンドリングで細かく分けたくなったときは、ログのイベント定義も同じく細かくする。
 
 ログに出さず `Result` で返すだけの失敗（入力の誤りなど）は、各モジュールが自分で型を作ってよい。
