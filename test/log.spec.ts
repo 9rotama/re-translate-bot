@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { errorDetails, interactionPlace, log, type LogEvent } from '../src/log';
+import { spyConsole } from './helpers/console';
 
 // 型をすり抜けた呼び出し（変数に入れたオブジェクトや、数に変換した値）を再現する。
 // 型の検査を通らない値をわざと渡すので、型の絞り込みはしない。
@@ -19,19 +20,7 @@ const stepSucceeded = {
 } as const satisfies LogEvent;
 
 describe('log', () => {
-	let spies: Record<'log' | 'warn' | 'error', MockInstance>;
-
-	beforeEach(() => {
-		spies = {
-			log: vi.spyOn(console, 'log').mockImplementation(() => {}),
-			warn: vi.spyOn(console, 'warn').mockImplementation(() => {}),
-			error: vi.spyOn(console, 'error').mockImplementation(() => {}),
-		};
-	});
-
-	afterEach(() => {
-		vi.restoreAllMocks();
-	});
+	const spies = spyConsole();
 
 	describe('レベル', () => {
 		it.each([
