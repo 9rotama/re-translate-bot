@@ -214,7 +214,6 @@ src/
 scripts/
   register-commands.ts  コマンドの登録
   gen-log-events.ts     src/log.ts から docs/log-events.md を生成する
-  check-directives.ts   src/ に lint と型検査を止めるコメントがないか確かめる
 migrations/
   0001_create_channel_settings.sql
 ```
@@ -305,7 +304,7 @@ oxfmt は 1.0 に達していないので、版を固定し、更新時は差分
 
 `src/` では、lint を止めるコメント（`oxlint-disable` など）と型検査を止めるコメント（`@ts-ignore`、`@ts-expect-error`、`@ts-nocheck`）を使わない。
 止めたくなった箇所はコードを直すか、理由を添えて設定のほうを変える。設定に残せば、例外の範囲がレビューで一か所から見えるからである。
-この検査は `scripts/check-directives.ts` が行い、`pnpm run lint` に含める。oxlint のルールで検査しないのは、ファイル全体を止めるコメントがそのルールも止めてしまうためである。
+この検査は `git grep` で行い（`pnpm run directives:check`）、`pnpm run lint` に含める。oxlint や ast-grep のルールで検査しないのは、どちらもファイル全体を止めるコメントを持ち、それがそのルールも止めてしまうためである。
 テストでは型の誤りを確かめるために `@ts-expect-error` を使うので、`test/` は対象にしない。
 
 テストは `@cloudflare/vitest-plugin` を使い、D1 を含めて Workers の実行環境で動かせるようにする。
