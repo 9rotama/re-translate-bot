@@ -87,20 +87,22 @@ const unsupportedReply = (codes: readonly string[]) =>
 		`対応していない言語コードがあります: ${codes.map((code) => inlineCode(truncated(code))).join('、')}\n言語コードの表 → ${LANGUAGE_TABLE_URL}`,
 	);
 
-// 入力を保存してよいかを決め、入力の誤りで保存できないときは本人に見せるエラーの応答を返す。保存した後に残る誤りは updatedReply が示す。
+// 保存する前に、入力を保存してよいかを決める。入力の誤りで保存できないときは、本人に見せるエラーの応答を返す。
+// toRoute は設定そのものが正しいかを調べるので、ここではその結果から、誤りが入力のせいか保存済みの側のせいかを見分ける。
+// 保存した後に残る誤りは updatedReply が示す。
 // 保存済みの側だけがおかしいときも保存するのは、docs/interface.md の「保存済みの設定の誤り」のとおり設定し直せば直るようにするため。
 // 断ると、原文の言語と中継言語の両方がおかしいチャンネルはどちらのコマンドでも直せなくなる。
-type InputCheck = { readonly ok: true } | { readonly ok: false; readonly errorReply: APIInteractionResponse };
+type InputValidation = { readonly ok: true } | { readonly ok: false; readonly errorReply: APIInteractionResponse };
 
-const SAVABLE: InputCheck = { ok: true };
-const rejected = (response: APIInteractionResponse): InputCheck => ({ ok: false, errorReply: response });
+const SAVABLE: InputValidation = { ok: true };
+const rejected = (response: APIInteractionResponse): InputValidation => ({ ok: false, errorReply: response });
 
 // repeatedOnlyInStored は、ルートの隣り合う組のうち入力を含まない組だけで同じ言語が続いているかを返す。
-function rejectInputError(
+function validateInputBeforeSave(
 	settings: ChannelSettings,
 	inputs: readonly string[],
 	repeatedOnlyInStored: (route: Route) => boolean,
-): InputCheck {
+): InputValidation {
 	const route = toRoute(settings);
 	if (route.ok) return SAVABLE;
 	if (route.error.kind === 'repeated_language') {
@@ -138,8 +140,8 @@ export async function settingsRelay(interaction: Interaction, env: Env): Promise
 	const current = await readSettings(env.DB, interaction.channel.id);
 	if (!current.ok) return storeFailed(interaction, current.error);
 	// 中継言語を置き換えると、ルートの隣り合う組はどれも入力を含む。
-	const inputCheck = rejectInputError({ originLang: current.value.originLang, relayLangs: inputs }, inputs, () => false);
-	if (!inputCheck.ok) return inputCheck.errorReply;
+	const validation = validateInputBeforeSave({ originLang: current.value.originLang, relayLangs: inputs }, inputs, () => false);
+	if (!validation.ok) return validation.errorReply;
 
 	const relayLangs = inputs.map((input) => input.toLowerCase());
 	const updated = await writeRelayLangs(env.DB, interaction.channel.id, relayLangs);
@@ -158,8 +160,8 @@ export async function settingsOrigin(interaction: Interaction, env: Env): Promis
 
 	const current = await readSettings(env.DB, interaction.channel.id);
 	if (!current.ok) return storeFailed(interaction, current.error);
-	const inputCheck = rejectInputError({ originLang: input, relayLangs: current.value.relayLangs }, inputs, repeatedOnlyInRelay);
-	if (!inputCheck.ok) return inputCheck.errorReply;
+	const validation = validateInputBeforeSave({ originLang: input, relayLangs: current.value.relayLangs }, inputs, repeatedOnlyInRelay);
+	if (!validation.ok) return validation.errorReply;
 
 	const updated = await writeOriginLang(env.DB, interaction.channel.id, input.toLowerCase());
 	if (!updated.ok) return storeFailed(interaction, updated.error);
