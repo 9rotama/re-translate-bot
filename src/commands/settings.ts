@@ -165,8 +165,8 @@ async function updateSettings(
 		if (!checked.ok) return checked.reply;
 
 		const updated = await write(current.value);
-		if (!updated.ok) return storeFailed(interaction, updated.error);
-		if (updated.value !== undefined) return updatedReply(interaction, heading, updated.value);
+		if (updated.ok) return updatedReply(interaction, heading, updated.value);
+		if (updated.error.kind === 'd1_failed') return storeFailed(interaction, updated.error);
 	}
 	// 時間をおけば書けるので、読み書きの失敗と同じ案内をする。
 	log({ event: 'settings.conflict', ...interactionPlace(interaction) });

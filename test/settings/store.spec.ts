@@ -76,13 +76,13 @@ describe('writeRelayLangs', () => {
 		expect(await rowOf(channelId)).toMatchObject({ updated_at: 1_700_000_000_000 });
 	});
 
-	it('検証に使った原文の言語から保存済みの原文の言語が変わっていたら、書き込まずに undefined を返す', async () => {
+	it('検証に使った原文の言語から保存済みの原文の言語が変わっていたら、書き込まずに conflicted で失敗する', async () => {
 		const channelId = newChannelId();
 		await writeOriginLang(env.DB, channelId, 'fr', defaultSettings);
 
 		const result = await writeRelayLangs(env.DB, channelId, ['fr'], defaultSettings);
 
-		expect(result).toEqual({ ok: true, value: undefined });
+		expect(result).toEqual({ ok: false, error: { kind: 'conflicted' } });
 		expect(await readSettings(env.DB, channelId)).toEqual({ ok: true, value: { originLang: 'fr', relayLangs: ['en'] } });
 	});
 });
@@ -115,13 +115,13 @@ describe('writeOriginLang', () => {
 		expect(await rowOf(channelId)).toMatchObject({ updated_at: 1_700_000_000_000 });
 	});
 
-	it('検証に使った中継言語から保存済みの中継言語が変わっていたら、書き込まずに undefined を返す', async () => {
+	it('検証に使った中継言語から保存済みの中継言語が変わっていたら、書き込まずに conflicted で失敗する', async () => {
 		const channelId = newChannelId();
 		await writeRelayLangs(env.DB, channelId, ['fr'], defaultSettings);
 
 		const result = await writeOriginLang(env.DB, channelId, 'fr', defaultSettings);
 
-		expect(result).toEqual({ ok: true, value: undefined });
+		expect(result).toEqual({ ok: false, error: { kind: 'conflicted' } });
 		expect(await readSettings(env.DB, channelId)).toEqual({ ok: true, value: { originLang: 'ja', relayLangs: ['fr'] } });
 	});
 });
@@ -142,7 +142,7 @@ describe('D1 の失敗', () => {
 
 		const result = await call();
 
-		expect(result).toMatchObject({ ok: false, error: { operation, details: { errorName: 'TypeError' } } });
+		expect(result).toMatchObject({ ok: false, error: { kind: 'd1_failed', operation, details: { errorName: 'TypeError' } } });
 		expect(JSON.stringify(result)).not.toContain('原文');
 	});
 });
