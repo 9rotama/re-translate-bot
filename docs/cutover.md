@@ -31,7 +31,7 @@ Discord のドキュメントは、`applications.commands` が `bot` の scope �
 - [OAuth2](https://docs.discord.com/developers/topics/oauth2)
 
 ただし、`bot` の scope だけで以前に招待されたギルドでもコマンドが出るかは、ドキュメントからは読み切れない。
-これは下の「本番での確認」で、既存のギルドで確かめる。
+既存のギルドでコマンドが出るかは、手順5の「本番での確認」で確かめる。
 
 ## 手順
 
@@ -39,6 +39,7 @@ Discord のドキュメントは、`applications.commands` が `bot` の scope �
 
 本番の D1（`re-translate-bot`）は作成済みだが、テーブルがまだない。
 Worker はテーブルがないと設定の読み書きに失敗するので、配備より先に適用する。
+`list` で未適用のマイグレーションが `0001_create_channel_settings.sql` であることを確かめてから、`apply` で適用する。
 
 ```sh
 pnpm exec wrangler d1 migrations list DB --remote --env production
@@ -56,11 +57,11 @@ pnpm run deploy
 
 ### 3. Interactions Endpoint URL を設定する
 
+保存する前に `wrangler tail --env production` を別の端末で開いておくと、PING を受けたことをその場で確かめられる。
+
 Developer Portal で本番アプリ（`981977773277061210`）の General Information を開き、Interactions Endpoint URL に手順2の URL を入れて保存する。
 保存のときに Discord が署名付きの PING を送り、Worker が正しく応答しないと保存できない。
 保存できなければ、`wrangler.jsonc` の `env.production.vars` の `DISCORD_PUBLIC_KEY` が本番アプリの公開鍵と一致しているかを確かめる。
-
-`wrangler tail --env production` を別の端末で開いておくと、PING を受けたことをその場で確かめられる。
 
 ### 4. グローバルコマンドを登録する
 
@@ -95,13 +96,13 @@ EC2 を止めてから intent を外すのは、旧 bot が intent の不足で�
 
 ### 7. 招待 URL の権限を外す
 
-README の招待 URL は、旧 bot の権限（`permissions=274945108992`）を求めている。
+README の招待 URL は旧 bot の権限（`permissions=274945108992`）を求めている。
 新しい bot はギルド内の権限を使わないので（[非機能要件](./non-functional.md)の「セキュリティ」）、`permissions` を外す。
 旧 bot が動いている間に外すと、その URL で招待した旧 bot がメッセージを送れないため、旧 bot を止めた後に #38 の README の更新で行う。
 
 ## 切り戻し
 
-旧 bot を止める前（手順6より前）なら、次の手順で旧 bot だけが動く状態に戻せる。
+手順6で旧 bot を止める前なら、次の手順で旧 bot だけが動く状態に戻せる。
 
 1. グローバルコマンドを空で上書きする。`definitions` を一時的に空にして `pnpm run commands:register` を実行するか、`PUT /applications/981977773277061210/commands` に `[]` を送る。
 2. Developer Portal で Interactions Endpoint URL を空にする。
