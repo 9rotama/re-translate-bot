@@ -25,14 +25,20 @@ Rate Limiting binding が無料プランで使えるか（[アーキテクチャ
 
 ### 招待 URL の scope
 
-招待 URL の scope は `bot` のままでよく、`applications.commands` を足さなくてよい。
+招待 URL の scope には、`bot` に加えて `applications.commands` を書く。
+
 Discord のドキュメントは、`applications.commands` が `bot` の scope に含まれると明記している。
 
 - [Application Commands](https://docs.discord.com/developers/interactions/application-commands)
 - [OAuth2](https://docs.discord.com/developers/topics/oauth2)
 
-ただし、`bot` の scope だけで以前に招待されたギルドでもコマンドが出るかは、ドキュメントからは読み切れない。
-既存のギルドでコマンドが出るかは、手順5の「本番での確認」で確かめる。
+しかし切り替えの際に、以前 `bot` の scope だけで招待したギルドでは、本番アプリのグローバルコマンドが表示されなかった。
+同じギルドに `scope=bot%20applications.commands` の URL で招待し直すと表示された。
+bot をキックする必要はない。
+以前の招待には `applications.commands` が含まれていないとみなし、README の招待 URL に明記する。
+
+以前から bot がいるギルドでは、利用者に招待し直してもらう必要がある。
+そのため、README の招待 URL は旧 bot を止める前に更新する。
 
 ## 手順
 
@@ -78,7 +84,7 @@ pnpm run commands:register
 [テスト方針](./testing.md)の「自動テストしない範囲」の項目を、本番アプリで確かめる。
 加えて次を確かめる。
 
-- 以前から bot がいるギルドで、招待し直さずにスラッシュコマンドが表示され、動く。
+- 以前から bot がいるギルドで、README の URL から招待し直すとスラッシュコマンドが表示され、動く。
 - 権限を付けずに新しく招待したギルドで、すべてのコマンドが動く。
 - Workers Logs に本番の Worker のログが出ている。
 
@@ -97,7 +103,7 @@ EC2 を止めてから intent を外すのは、旧 bot が intent の不足で�
 
 ### 7. 招待 URL の権限を外す
 
-README の招待 URL は旧 bot の権限（`permissions=274945108992`）を求めている。
+README の招待 URL は、scope に `applications.commands` を足したあとも、旧 bot の権限（`permissions=274945108992`）を求めている。
 新しい bot はギルド内の権限を使わないので（[非機能要件](./non-functional.md)の「セキュリティ」）、`permissions` を外す。
 旧 bot が動いている間に外すと、その URL で招待した旧 bot がメッセージを送れないため、旧 bot を止めた後に #38 の README の更新で行う。
 

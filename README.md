@@ -8,7 +8,7 @@ Discordで送信されたメッセージを勝手に再翻訳するbot
 
 以下URLから招待してください👇
 
-https://discord.com/api/oauth2/authorize?client_id=981977773277061210&permissions=274945108992&scope=bot
+https://discord.com/api/oauth2/authorize?client_id=981977773277061210&permissions=274945108992&scope=bot%20applications.commands
 
 ※開発中のためサーバの招待・使用におけるトラブルは自己責任でお願いします
 
