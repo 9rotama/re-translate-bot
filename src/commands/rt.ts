@@ -18,6 +18,7 @@ import { readSettings, type ChannelSettings, type StoreError } from '../settings
 import { err, type Result } from '../result';
 import { relay, textLength, TRANSLATION_DEADLINE_MS, type Route, type TranslationAi } from '../translation/relay';
 import { stringOption } from './dispatch';
+import { invalidSettingsMessage } from './settings';
 
 type Interaction = APIChatInputApplicationCommandGuildInteraction;
 
@@ -144,8 +145,12 @@ async function translate(job: Job, timeoutMs: number): Promise<RESTPatchAPIWebho
 		return settingsUnavailable(job, startedAt);
 	}
 	// 保存済みの設定は書き込むときに検証しているので、ここで失敗するのは保存後に検証の規則が変わった場合などに限る。
+	// 再試行しても直らないので、翻訳の失敗とは分けて設定し直す方法を見せる（docs/interface.md の「保存済みの設定の誤り」）。
 	const route = toRoute(settings.value);
-	if (!route.ok) return settingsUnavailable(job, startedAt);
+	if (!route.ok) {
+		log({ event: 'settings.invalid', errorKind: route.error.kind, ...place });
+		return invalidSettingsMessage(route.error);
+	}
 
 	// relay() は失敗を自分で記録する。
 	const remainingMs = Math.max(0, timeoutMs - (Date.now() - startedAt));

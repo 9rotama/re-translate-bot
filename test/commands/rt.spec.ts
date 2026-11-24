@@ -133,7 +133,8 @@ async function run(
 	return { response, deferred: pending.length > 0 };
 }
 
-const errorContainer = (message: string, original: string) => ({
+// 区切り線の下に footer を添えたエラーの Container。
+const errorWithFooter = (message: string, footer: string) => ({
 	flags: MessageFlags.IsComponentsV2,
 	components: [
 		{
@@ -141,12 +142,23 @@ const errorContainer = (message: string, original: string) => ({
 			components: [
 				{ type: ComponentType.TextDisplay, content: `### エラー\n${message}` },
 				expect.objectContaining({ type: ComponentType.Separator }),
-				{ type: ComponentType.TextDisplay, content: `||原文: ${original}||` },
+				{ type: ComponentType.TextDisplay, content: footer },
 			],
 		},
 	],
 	allowed_mentions: { parse: [] },
 });
+
+const errorContainer = (message: string, original: string) => errorWithFooter(message, `||原文: ${original}||`);
+
+// 書き込むときの検証を通らない設定を、D1 に直接保存する。
+async function saveRawSettings(originLang: string, relayLangs: string): Promise<string> {
+	const channelId = newId();
+	await env.DB.prepare('insert into channel_settings (channel_id, origin_lang, relay_langs, updated_at) values (?, ?, ?, ?)')
+		.bind(channelId, originLang, relayLangs, 0)
+		.run();
+	return channelId;
+}
 
 // toMatchObject で比べる。allowed_mentions は response.ts のテストで確かめている。
 const privateError = (message: string) => ({
@@ -369,18 +381,43 @@ describe('/rt', () => {
 			expect(sentBody()).toEqual(errorContainer('翻訳に失敗しました。時間をおいて試してください', 'こんにちは'));
 		});
 
-		it('保存済みの設定からルートを組み立てられなければ、翻訳せずに翻訳の失敗として表示する', async () => {
-			const channelId = newId();
-			await env.DB.prepare('insert into channel_settings (channel_id, origin_lang, relay_langs, updated_at) values (?, ?, ?, ?)')
-				.bind(channelId, 'xx', '["en"]', 0)
-				.run();
+		it('保存済みの設定に対応していない言語コードがあれば、翻訳せずに設定し直す方法を全員に見せ、settings.invalid を記録する', async () => {
+			const channelId = await saveRawSettings('xx', '["en"]');
 			const { ai, calls } = fakeAi();
 
 			await run(rtInteraction({ channelId, text: 'こんにちは' }), ai);
 
 			expect(calls).toHaveLength(0);
-			expect(sentBody()).toEqual(errorContainer('翻訳に失敗しました。時間をおいて試してください', 'こんにちは'));
-			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'translation.failed', errorKind: 'settings_unavailable' }));
+			expect(sentBody()).toEqual(
+				errorWithFooter(
+					'このチャンネルの設定に、対応していない言語コードがあります: `xx`\n/settings relay か /settings origin で設定し直してください',
+					'言語コードの表 → https://huggingface.co/facebook/m2m100_1.2B',
+				),
+			);
+			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'settings.invalid', errorKind: 'unsupported_language' }));
+			expect(spies.error).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'translation.failed' }));
+		});
+
+		it('保存済みの設定が同じ言語が続くルートなら、翻訳せずにそのルートと設定し直す方法を見せる', async () => {
+			const channelId = await saveRawSettings('ja', '["ja","en"]');
+			const { ai, calls } = fakeAi();
+
+			await run(rtInteraction({ channelId }), ai);
+
+			expect(calls).toHaveLength(0);
+			expect(sentBody()).toMatchObject({
+				components: [
+					{
+						components: [
+							{
+								content:
+									'### エラー\nこのチャンネルの設定は、同じ言語が続くルートになっています\n```ja -> ja -> en -> ja```\n/settings relay か /settings origin で設定し直してください',
+							},
+						],
+					},
+				],
+			});
+			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'settings.invalid', errorKind: 'repeated_language' }));
 		});
 	});
 
