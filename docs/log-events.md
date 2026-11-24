@@ -18,6 +18,7 @@
 | `translation.failed` | `error` | 翻訳全体が失敗し、利用者にエラーを表示した |
 | `followup.failed` | `error` | 遅延応答の後に元のメッセージを編集できなかった |
 | `d1.failed` | `error` | D1 の読み書きに失敗した |
+| `settings.conflict` | `warn` | 設定を読んでから書くまでに他の人が設定を変え続け、書き込みを諦めて利用者にエラーを表示した |
 | `settings.invalid` | `error` | 保存済みの設定から中継ルートを組み立てられず、利用者にエラーを表示した |
 | `unhandled_error` | `error` | 想定していない例外を最も外側で捕まえた |
 
@@ -139,6 +140,15 @@ D1 の読み書きに失敗した。レベルは `error`。
 | `causeName` | 例外の cause の name | 英字で始まる識別子（64文字まで） |
 | `causeCode` | 例外の cause の code | 英字で始まる識別子（64文字まで）か整数 |
 | `stack` | 例外の stack のうち、コードの位置の行 | `at` で始まる行を改行でつないだもの（10行まで） |
+
+## `settings.conflict`
+
+設定を読んでから書くまでに他の人が設定を変え続け、書き込みを諦めて利用者にエラーを表示した。レベルは `warn`。
+
+| 値 | 意味 | 取りうる値 |
+| --- | --- | --- |
+| `guildId` | ギルド ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+| `channelId` | チャンネル ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
 
 ## `settings.invalid`
 
