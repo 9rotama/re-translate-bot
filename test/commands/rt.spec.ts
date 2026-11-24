@@ -8,7 +8,6 @@ import {
 } from 'discord-api-types/v10';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { retranslate, type RtDeps } from '../../src/commands/rt';
-import { writeRelayLangs } from '../../src/settings/store';
 import type { TranslationAi } from '../../src/translation/relay';
 import { spyConsole } from '../helpers/console';
 import { commandInteraction, GUILD_ID } from '../helpers/interactions';
@@ -207,8 +206,8 @@ describe('/rt', () => {
 		});
 
 		it('チャンネルに保存した中継ルートで翻訳する', async () => {
-			const channelId = newId();
-			await writeRelayLangs(env.DB, channelId, ['en', 'fr']);
+			// 書き込みの関数は使わず、行を直接入れる。書き込みの関数の引数は /settings の実装で変わりうるため。
+			const channelId = await saveRawSettings('ja', '["en","fr"]');
 			const { ai, calls } = fakeAi();
 
 			await run(rtInteraction({ channelId }), ai);

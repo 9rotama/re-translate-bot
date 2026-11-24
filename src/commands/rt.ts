@@ -14,8 +14,7 @@ import { errorMessage, errorReply } from '../discord/response';
 import type { TranslationErrorKind } from '../errors';
 import { errorDetails, interactionPlace, log, type Place } from '../log';
 import { formatRoute, toRoute } from '../settings/route';
-import { readSettings, type ChannelSettings, type StoreError } from '../settings/store';
-import { err, type Result } from '../result';
+import { readSettings } from '../settings/store';
 import { relay, textLength, TRANSLATION_DEADLINE_MS, type Route, type TranslationAi } from '../translation/relay';
 import { stringOption } from './dispatch';
 import { invalidSettingsMessage } from './settings';
@@ -118,14 +117,18 @@ function settingsUnavailable({ text, place }: Job, startedAt: number): RESTPatch
 	return failureMessage('settings_unavailable', text);
 }
 
-// D1 の Promise は打ち切れないので、期限が来たら待つのをやめて読み取りの失敗として扱う。
-async function readSettingsBefore(db: D1Database, channelId: string, timeoutMs: number): Promise<Result<ChannelSettings, StoreError>> {
+const TIMED_OUT = 'timed_out';
+
+// D1 の Promise は打ち切れないので、期限が来たら待つのをやめる。
+// StoreError を自分で組み立てないのは、store.ts が StoreError に項目を足したときに食い違わないようにするため。
+async function readSettingsBefore(
+	db: D1Database,
+	channelId: string,
+	timeoutMs: number,
+): Promise<Awaited<ReturnType<typeof readSettings>> | typeof TIMED_OUT> {
 	let timer: ReturnType<typeof setTimeout> | null = null;
-	const timeout = new Promise<Result<ChannelSettings, StoreError>>((resolve) => {
-		timer = setTimeout(() => {
-			const error = new DOMException('settings read timed out', 'TimeoutError');
-			resolve(err({ operation: 'settings.read', details: errorDetails(error) }));
-		}, timeoutMs);
+	const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+		timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
 	});
 	try {
 		return await Promise.race([readSettings(db, channelId), timeout]);
@@ -140,6 +143,11 @@ async function translate(job: Job, timeoutMs: number): Promise<RESTPatchAPIWebho
 	// 期限を relay() の中だけで数えると、D1 が遅いときに設定の読み取りの分だけ30秒の表示期限を超える。
 	// 設定を読む前から数え、翻訳には残りの時間だけを渡す。
 	const settings = await readSettingsBefore(deps.db, interaction.channel.id, timeoutMs);
+	if (settings === TIMED_OUT) {
+		const details = errorDetails(new DOMException('settings read timed out', 'TimeoutError'));
+		log({ event: 'd1.failed', operation: 'settings.read', ...place, ...details });
+		return settingsUnavailable(job, startedAt);
+	}
 	if (!settings.ok) {
 		log({ event: 'd1.failed', operation: settings.error.operation, ...place, ...settings.error.details });
 		return settingsUnavailable(job, startedAt);
