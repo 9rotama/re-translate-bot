@@ -198,7 +198,7 @@ describe('/rt', () => {
 					{
 						author: { name: 'tester', icon_url: icon },
 						description: 'こんにちは→en→ja\n\n||原文: こんにちは||',
-						footer: { text: 'ja -> en -> ja', icon_url: icon },
+						footer: { text: 'ja -> en -> ja' },
 					},
 				],
 				allowed_mentions: { parse: [] },
@@ -242,10 +242,10 @@ describe('/rt', () => {
 				overrides: { discriminator: '1237' },
 				url: 'https://cdn.discordapp.com/embed/avatars/2.png',
 			},
-		])('author とフッターのアイコンは、$case を使う', async ({ overrides, url }) => {
+		])('author のアイコンは、$case を使う', async ({ overrides, url }) => {
 			await run(rtInteraction(overrides), fakeAi().ai);
 
-			expect(sentBody()).toMatchObject({ embeds: [{ author: { icon_url: url }, footer: { icon_url: url } }] });
+			expect(sentBody()).toMatchObject({ embeds: [{ author: { icon_url: url } }] });
 		});
 
 		it('原文と翻訳結果の Markdown の記号をエスケープし、スポイラーが途中で切れないようにする', async () => {

@@ -79,12 +79,11 @@ function resultMessage(
 	translated: string,
 	route: Route,
 ): RESTPatchAPIWebhookWithTokenMessageJSONBody {
-	const icon = avatarUrl(interaction);
 	// 色を付けないので color は指定しない。
 	const embed: APIEmbed = {
-		author: { name: displayName(interaction), icon_url: icon },
+		author: { name: displayName(interaction), icon_url: avatarUrl(interaction) },
 		description: `${escapeMarkdown(translated)}\n\n${originalSpoiler(original)}`,
-		footer: { text: formatRoute(route), icon_url: icon },
+		footer: { text: formatRoute(route) },
 	};
 	return { embeds: [embed], allowed_mentions: NO_MENTIONS };
 }
