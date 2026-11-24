@@ -180,6 +180,8 @@ Drizzle は通常の TypeScript で書けるので、content mapper が要らず
 ### マイグレーション
 
 `migrations/` に SQL を手で書き、`wrangler d1 migrations apply` で適用する。
+適用は環境ごとの npm script で行う。手元の D1 は `pnpm run db:migrate:local`、開発用は `pnpm run db:migrate:dev`、本番は `pnpm run db:migrate` で適用する。名前の付け方は `deploy` と `commands:register` に合わせ、接尾辞のないものを本番にした。
+Worker の配備では適用されないので、マイグレーションを足したときは配備の前に適用する。
 `drizzle-kit` でスキーマからマイグレーションを生成することはしない。
 マイグレーションの SQL を正本とし、`settings/schema.ts` はそれに合わせて手で書く。
 

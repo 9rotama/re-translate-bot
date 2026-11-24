@@ -15,6 +15,7 @@
 切り替えの前に次を確かめる。
 
 - `main` の CI が通っている。
+- 開発用の D1 にマイグレーションを適用している（`pnpm run db:migrate:dev`）。適用していないと、開発用 Worker で設定の読み書きを確かめられない。
 - [テスト方針](./testing.md)の「自動テストしない範囲」を、開発用 Worker と開発用アプリで確かめ終えている。
 - `.env.production.local` に本番アプリの `DISCORD_APPLICATION_ID`（`981977773277061210`）と bot トークンが入っており、`DISCORD_GUILD_ID` が書かれていない。書かれていると、グローバルコマンドではなくそのギルドのコマンドとして登録される。
 - `wrangler whoami` で、開発用と同じ Cloudflare アカウントにログインしている。
@@ -39,12 +40,12 @@ Discord のドキュメントは、`applications.commands` が `bot` の scope �
 
 本番の D1（`re-translate-bot`）は作成済みだが、テーブルがまだない。
 Worker はテーブルがないと設定の読み書きに失敗するので、配備より先に適用する。
-`list` で未適用のマイグレーションが `0001_create_channel_settings.sql` であることを確かめてから、`apply` で適用する。
-
 ```sh
-pnpm exec wrangler d1 migrations list DB --remote --env production
-pnpm exec wrangler d1 migrations apply DB --remote --env production
+pnpm run db:migrate
 ```
+
+適用の前に未適用のマイグレーションの一覧が出て、続けてよいかを聞かれる。
+一覧が `0001_create_channel_settings.sql` であることを確かめてから続ける。
 
 ### 2. 本番に配備する
 
