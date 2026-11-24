@@ -11,6 +11,7 @@ export type ChannelSettings = {
 };
 
 export type StoreError = {
+	readonly kind: 'd1_failed';
 	readonly operation: D1Operation;
 	readonly details: ErrorDetails;
 };
@@ -24,7 +25,7 @@ async function query<T>(operation: D1Operation, run: () => Promise<T>): Promise<
 	try {
 		return ok(await run());
 	} catch (error) {
-		return err({ operation, details: errorDetails(error) });
+		return err({ kind: 'd1_failed', operation, details: errorDetails(error) });
 	}
 }
 
@@ -37,30 +38,60 @@ export async function readSettings(db: D1Database, channelId: string): Promise<R
 	return ok(result.value ?? defaultSettings);
 }
 
+// 書き込みは、検証に使った設定（basedOn）から指定しなかった列が変わっていないときだけ行い、変わっていたら conflicted で失敗する。
+// D1 には読んでから書くまでを1つにするトランザクションがないので、
+// 他の人が同時にもう一方の列を変えると、どちらの検証も通ったまま禁止したルートが保存されてしまうため。
+// 行がないときに basedOn の値を入れるのは、行がなければ読み取りは既定値を返し、basedOn はその既定値だからである。
+export type WriteError = StoreError | { readonly kind: 'conflicted' };
+export type WriteResult = Result<ChannelSettings, WriteError>;
+
+// DO UPDATE の WHERE が偽だと行を更新しないので、RETURNING は行を返さず get() は undefined になる。
+const written = (result: Result<ChannelSettings | undefined, StoreError>): WriteResult => {
+	if (!result.ok) return result;
+	return result.value === undefined ? err({ kind: 'conflicted' }) : ok(result.value);
+};
+
 export async function writeRelayLangs(
 	db: D1Database,
 	channelId: string,
 	relayLangs: readonly string[],
-): Promise<Result<ChannelSettings, StoreError>> {
+	basedOn: ChannelSettings,
+): Promise<WriteResult> {
 	const updatedAt = Date.now();
-	return query('settings.upsert_relay', () =>
+	const result = await query('settings.upsert_relay', () =>
 		drizzle(db)
 			.insert(channelSettings)
-			.values({ channelId, originLang: defaultSettings.originLang, relayLangs: [...relayLangs], updatedAt })
-			.onConflictDoUpdate({ target: channelSettings.channelId, set: { relayLangs: [...relayLangs], updatedAt } })
+			.values({ channelId, originLang: basedOn.originLang, relayLangs: [...relayLangs], updatedAt })
+			.onConflictDoUpdate({
+				target: channelSettings.channelId,
+				set: { relayLangs: [...relayLangs], updatedAt },
+				setWhere: eq(channelSettings.originLang, basedOn.originLang),
+			})
 			.returning(columns)
 			.get(),
 	);
+	return written(result);
 }
 
-export async function writeOriginLang(db: D1Database, channelId: string, originLang: string): Promise<Result<ChannelSettings, StoreError>> {
+export async function writeOriginLang(
+	db: D1Database,
+	channelId: string,
+	originLang: string,
+	basedOn: ChannelSettings,
+): Promise<WriteResult> {
 	const updatedAt = Date.now();
-	return query('settings.upsert_origin', () =>
+	const result = await query('settings.upsert_origin', () =>
 		drizzle(db)
 			.insert(channelSettings)
-			.values({ channelId, originLang, relayLangs: [...defaultSettings.relayLangs], updatedAt })
-			.onConflictDoUpdate({ target: channelSettings.channelId, set: { originLang, updatedAt } })
+			.values({ channelId, originLang, relayLangs: [...basedOn.relayLangs], updatedAt })
+			.onConflictDoUpdate({
+				target: channelSettings.channelId,
+				set: { originLang, updatedAt },
+				// relay_langs は JSON の文字列で持ち、Drizzle が書き込みと同じく JSON.stringify した値と比べる。
+				setWhere: eq(channelSettings.relayLangs, [...basedOn.relayLangs]),
+			})
 			.returning(columns)
 			.get(),
 	);
+	return written(result);
 }

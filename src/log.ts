@@ -164,6 +164,11 @@ export const logEvents = {
 			...errorFields,
 		},
 	},
+	'settings.conflict': {
+		level: 'warn',
+		description: '設定を読んでから書くまでに他の人が設定を変え続け、書き込みを諦めて利用者にエラーを表示した',
+		fields: { ...placeFields },
+	},
 	'settings.invalid': {
 		level: 'error',
 		description: '保存済みの設定から中継ルートを組み立てられず、利用者にエラーを表示した',

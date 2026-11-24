@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readSettings, writeOriginLang, writeRelayLangs } from '../../src/settings/store';
+import { defaultSettings, readSettings, writeOriginLang, writeRelayLangs } from '../../src/settings/store';
 
 // テストどうしで行を共有しないよう、テストごとに別のチャンネル ID を使う。
 let nextChannel = 100000000000000000n;
@@ -28,8 +28,8 @@ describe('readSettings', () => {
 
 	it('書き込んだ設定を読める', async () => {
 		const channelId = newChannelId();
-		await writeRelayLangs(env.DB, channelId, ['en', 'fr']);
-		await writeOriginLang(env.DB, channelId, 'ko');
+		await writeRelayLangs(env.DB, channelId, ['en', 'fr'], defaultSettings);
+		await writeOriginLang(env.DB, channelId, 'ko', { originLang: 'ja', relayLangs: ['en', 'fr'] });
 
 		const result = await readSettings(env.DB, channelId);
 
@@ -39,7 +39,7 @@ describe('readSettings', () => {
 	it('設定はチャンネルごとに独立している', async () => {
 		const channelId = newChannelId();
 		const other = newChannelId();
-		await writeRelayLangs(env.DB, channelId, ['de']);
+		await writeRelayLangs(env.DB, channelId, ['de'], defaultSettings);
 
 		const result = await readSettings(env.DB, other);
 
@@ -51,7 +51,7 @@ describe('writeRelayLangs', () => {
 	it('未設定のチャンネルでは、原文の言語を既定値にして中継言語を保存し、更新後の設定を返す', async () => {
 		const channelId = newChannelId();
 
-		const result = await writeRelayLangs(env.DB, channelId, ['en', 'fr']);
+		const result = await writeRelayLangs(env.DB, channelId, ['en', 'fr'], defaultSettings);
 
 		expect(result).toEqual({ ok: true, value: { originLang: 'ja', relayLangs: ['en', 'fr'] } });
 		expect(await rowOf(channelId)).toMatchObject({ origin_lang: 'ja', relay_langs: '["en","fr"]' });
@@ -59,10 +59,10 @@ describe('writeRelayLangs', () => {
 
 	it('設定済みのチャンネルでは、原文の言語を変えずに中継言語だけを置き換える', async () => {
 		const channelId = newChannelId();
-		await writeOriginLang(env.DB, channelId, 'ko');
-		await writeRelayLangs(env.DB, channelId, ['en', 'fr']);
+		await writeOriginLang(env.DB, channelId, 'ko', defaultSettings);
+		await writeRelayLangs(env.DB, channelId, ['en', 'fr'], { originLang: 'ko', relayLangs: ['en'] });
 
-		const result = await writeRelayLangs(env.DB, channelId, ['de']);
+		const result = await writeRelayLangs(env.DB, channelId, ['de'], { originLang: 'ko', relayLangs: ['en', 'fr'] });
 
 		expect(result).toEqual({ ok: true, value: { originLang: 'ko', relayLangs: ['de'] } });
 	});
@@ -71,9 +71,19 @@ describe('writeRelayLangs', () => {
 		const channelId = newChannelId();
 		vi.useFakeTimers({ now: 1_700_000_000_000, toFake: ['Date'] });
 
-		await writeRelayLangs(env.DB, channelId, ['en']);
+		await writeRelayLangs(env.DB, channelId, ['en'], defaultSettings);
 
 		expect(await rowOf(channelId)).toMatchObject({ updated_at: 1_700_000_000_000 });
+	});
+
+	it('検証に使った原文の言語から保存済みの原文の言語が変わっていたら、書き込まずに conflicted で失敗する', async () => {
+		const channelId = newChannelId();
+		await writeOriginLang(env.DB, channelId, 'fr', defaultSettings);
+
+		const result = await writeRelayLangs(env.DB, channelId, ['fr'], defaultSettings);
+
+		expect(result).toEqual({ ok: false, error: { kind: 'conflicted' } });
+		expect(await readSettings(env.DB, channelId)).toEqual({ ok: true, value: { originLang: 'fr', relayLangs: ['en'] } });
 	});
 });
 
@@ -81,7 +91,7 @@ describe('writeOriginLang', () => {
 	it('未設定のチャンネルでは、中継言語を既定値にして原文の言語を保存し、更新後の設定を返す', async () => {
 		const channelId = newChannelId();
 
-		const result = await writeOriginLang(env.DB, channelId, 'ko');
+		const result = await writeOriginLang(env.DB, channelId, 'ko', defaultSettings);
 
 		expect(result).toEqual({ ok: true, value: { originLang: 'ko', relayLangs: ['en'] } });
 		expect(await rowOf(channelId)).toMatchObject({ origin_lang: 'ko', relay_langs: '["en"]' });
@@ -89,9 +99,9 @@ describe('writeOriginLang', () => {
 
 	it('設定済みのチャンネルでは、中継言語を変えずに原文の言語だけを置き換える', async () => {
 		const channelId = newChannelId();
-		await writeRelayLangs(env.DB, channelId, ['en', 'fr']);
+		await writeRelayLangs(env.DB, channelId, ['en', 'fr'], defaultSettings);
 
-		const result = await writeOriginLang(env.DB, channelId, 'ko');
+		const result = await writeOriginLang(env.DB, channelId, 'ko', { originLang: 'ja', relayLangs: ['en', 'fr'] });
 
 		expect(result).toEqual({ ok: true, value: { originLang: 'ko', relayLangs: ['en', 'fr'] } });
 	});
@@ -100,9 +110,19 @@ describe('writeOriginLang', () => {
 		const channelId = newChannelId();
 		vi.useFakeTimers({ now: 1_700_000_000_000, toFake: ['Date'] });
 
-		await writeOriginLang(env.DB, channelId, 'ko');
+		await writeOriginLang(env.DB, channelId, 'ko', defaultSettings);
 
 		expect(await rowOf(channelId)).toMatchObject({ updated_at: 1_700_000_000_000 });
+	});
+
+	it('検証に使った中継言語から保存済みの中継言語が変わっていたら、書き込まずに conflicted で失敗する', async () => {
+		const channelId = newChannelId();
+		await writeRelayLangs(env.DB, channelId, ['fr'], defaultSettings);
+
+		const result = await writeOriginLang(env.DB, channelId, 'fr', defaultSettings);
+
+		expect(result).toEqual({ ok: false, error: { kind: 'conflicted' } });
+		expect(await readSettings(env.DB, channelId)).toEqual({ ok: true, value: { originLang: 'ja', relayLangs: ['fr'] } });
 	});
 });
 
@@ -113,8 +133,8 @@ describe('D1 の失敗', () => {
 
 	it.each([
 		['読み取り', 'settings.read', () => readSettings(env.DB, newChannelId())],
-		['中継言語の書き込み', 'settings.upsert_relay', () => writeRelayLangs(env.DB, newChannelId(), ['en'])],
-		['原文の言語の書き込み', 'settings.upsert_origin', () => writeOriginLang(env.DB, newChannelId(), 'ko')],
+		['中継言語の書き込み', 'settings.upsert_relay', () => writeRelayLangs(env.DB, newChannelId(), ['en'], defaultSettings)],
+		['原文の言語の書き込み', 'settings.upsert_origin', () => writeOriginLang(env.DB, newChannelId(), 'ko', defaultSettings)],
 	] as const)('%sで D1 が例外を投げたら、throw せずにクエリの種類と例外の情報を返す', async (_, operation, call) => {
 		vi.spyOn(env.DB, 'prepare').mockImplementation(() => {
 			throw new TypeError('原文');
@@ -122,7 +142,7 @@ describe('D1 の失敗', () => {
 
 		const result = await call();
 
-		expect(result).toMatchObject({ ok: false, error: { operation, details: { errorName: 'TypeError' } } });
+		expect(result).toMatchObject({ ok: false, error: { kind: 'd1_failed', operation, details: { errorName: 'TypeError' } } });
 		expect(JSON.stringify(result)).not.toContain('原文');
 	});
 });

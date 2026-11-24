@@ -7,7 +7,7 @@ import {
 } from 'discord-api-types/v10';
 import type { CommandName } from './dispatch';
 import { help } from './help';
-import { settingsShow } from './settings';
+import { settingsOrigin, settingsRelay, settingsShow } from './settings';
 
 type Handler = (
 	interaction: APIChatInputApplicationCommandGuildInteraction,
@@ -23,7 +23,7 @@ const notImplemented: Handler = async (): Promise<APIInteractionResponse> => ({
 export const handlers: Readonly<Record<CommandName, Handler>> = {
 	rt: notImplemented,
 	'settings show': settingsShow,
-	'settings relay': notImplemented,
-	'settings origin': notImplemented,
+	'settings relay': settingsRelay,
+	'settings origin': settingsOrigin,
 	help,
 };
