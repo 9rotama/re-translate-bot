@@ -5,5 +5,5 @@
 	"semi": true,
 	"useTabs": true,
 	"sortPackageJson": false,
-	"ignorePatterns": ["legacy/**", "worker-configuration.d.ts", "pnpm-lock.yaml", "**/*.md"]
+	"ignorePatterns": ["worker-configuration.d.ts", "pnpm-lock.yaml", "**/*.md"]
 }

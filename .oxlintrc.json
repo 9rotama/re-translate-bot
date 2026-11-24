@@ -8,7 +8,7 @@
 	"options": {
 		"typeAware": true
 	},
-	"ignorePatterns": ["dist/**", "legacy/**", "coverage/**", "worker-configuration.d.ts"],
+	"ignorePatterns": ["dist/**", "coverage/**", "worker-configuration.d.ts"],
 	"rules": {
 		"typescript/no-floating-promises": "error",
 		"typescript/no-misused-promises": "error",
