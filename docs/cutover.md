@@ -32,13 +32,11 @@ Discord のドキュメントは、`applications.commands` が `bot` の scope �
 - [Application Commands](https://docs.discord.com/developers/interactions/application-commands)
 - [OAuth2](https://docs.discord.com/developers/topics/oauth2)
 
-しかし切り替えの際に、以前 `bot` の scope だけで招待したギルドでは、本番アプリのグローバルコマンドが表示されなかった。
-同じギルドに `scope=bot%20applications.commands` の URL で招待し直すと表示された。
-bot をキックする必要はない。
-以前の招待には `applications.commands` が含まれていないとみなし、README の招待 URL に明記する。
+しかし切り替えの際に、以前から bot がいるギルドの1つで、本番アプリのグローバルコマンドが表示されなかった。
+そのギルドに `scope=bot%20applications.commands` の URL で招待し直すと表示された。
+そのため、README の招待 URL に `applications.commands` を明記する。
 
-以前から bot がいるギルドでは、利用者に招待し直してもらう必要がある。
-そのため、README の招待 URL は旧 bot を止める前に更新する。
+以前から bot がいるギルドでコマンドが表示されないときは、README の URL から招待し直してもらう。
 
 ## 手順
 
@@ -84,7 +82,7 @@ pnpm run commands:register
 [テスト方針](./testing.md)の「自動テストしない範囲」の項目を、本番アプリで確かめる。
 加えて次を確かめる。
 
-- 以前から bot がいるギルドで、README の URL から招待し直すとスラッシュコマンドが表示され、動く。
+- 以前から bot がいるギルドで、スラッシュコマンドが表示され、動く。
 - 権限を付けずに新しく招待したギルドで、すべてのコマンドが動く。
 - Workers Logs に本番の Worker のログが出ている。
 
