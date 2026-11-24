@@ -41,7 +41,7 @@ Discord のドキュメントは、`applications.commands` が `bot` の scope �
 本番の D1（`re-translate-bot`）は作成済みだが、テーブルがまだない。
 Worker はテーブルがないと設定の読み書きに失敗するので、配備より先に適用する。
 ```sh
-pnpm run db:migrate
+pnpm run db:migrate:prod
 ```
 
 適用の前に未適用のマイグレーションの一覧が出て、続けてよいかを聞かれる。

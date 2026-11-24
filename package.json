@@ -24,7 +24,7 @@
 		"format:check": "oxfmt --check",
 		"db:migrate:local": "wrangler d1 migrations apply DB --local",
 		"db:migrate:dev": "wrangler d1 migrations apply DB --remote",
-		"db:migrate": "wrangler d1 migrations apply DB --remote --env production",
+		"db:migrate:prod": "wrangler d1 migrations apply DB --remote --env production",
 		"commands:register:dev": "node --env-file=.env.development.local scripts/register-commands.ts",
 		"commands:register": "node --env-file=.env.production.local scripts/register-commands.ts",
 		"cf-typegen": "wrangler types"
