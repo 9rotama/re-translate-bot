@@ -391,6 +391,16 @@ describe('/settings relay', () => {
 			expect(spies.error).toHaveBeenCalledWith(expect.objectContaining({ event: 'settings.invalid', errorKind: 'unsupported_language' }));
 		});
 
+		it('保存済みの原文の言語に対応していない言語コードがあっても、入力の中継言語どうしが続くなら断る', async () => {
+			const channelId = newChannelId();
+			await seed(channelId, { originLang: 'zz' });
+
+			const response = await relay('en en', channelId);
+
+			expect(textOf(response)).toBe('### エラー\n同じ言語が続くルートは設定できません\n```zz -> en -> en -> zz```');
+			expect(await settingsOf(channelId)).toEqual({ originLang: 'zz', relayLangs: ['en'] });
+		});
+
 		it('入力にも対応していない言語コードがあれば、入力の分だけを挙げて断る', async () => {
 			const channelId = newChannelId();
 			await seed(channelId, { originLang: 'zz' });
@@ -541,6 +551,25 @@ describe('/settings origin', () => {
 
 			expect(textOf(response)).toBe('### エラー\n同じ言語が続くルートは設定できません\n```en -> en -> en -> en```');
 			expect(await settingsOf(channelId)).toMatchObject({ originLang: 'ja' });
+		});
+
+		it('保存済みの中継言語に対応していない言語コードがあっても、入力の原文の言語が中継言語と続くなら断る', async () => {
+			const channelId = newChannelId();
+			await seed(channelId, { relayLangs: ['en', 'zz'] });
+
+			const response = await origin('en', channelId);
+
+			expect(textOf(response)).toBe('### エラー\n同じ言語が続くルートは設定できません\n```en -> en -> zz -> en```');
+			expect(await settingsOf(channelId)).toMatchObject({ originLang: 'ja' });
+		});
+
+		it('同じ言語が続くルートを示すとき、保存済みの対応していない言語コードは、コードブロックが途中で切れないように示す', async () => {
+			const channelId = newChannelId();
+			await seed(channelId, { relayLangs: ['en', '```\nZZ'] });
+
+			const response = await origin('en', channelId);
+
+			expect(textOf(response)).toBe("### エラー\n同じ言語が続くルートは設定できません\n```en -> en -> ''' zz -> en```");
 		});
 
 		it('原文の言語と中継言語の両方に誤りがあっても、2つのコマンドで順に直せる', async () => {

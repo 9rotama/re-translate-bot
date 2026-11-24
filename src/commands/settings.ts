@@ -12,8 +12,7 @@ import {
 import { interactionPlace, log } from '../log';
 import { formatRoute, toRoute, type RouteError } from '../settings/route';
 import { readSettings, writeOriginLang, writeRelayLangs, type ChannelSettings, type StoreError, type WriteResult } from '../settings/store';
-import { LANGUAGE_TABLE_URL } from '../translation/languages';
-import type { Route } from '../translation/relay';
+import { LANGUAGE_TABLE_URL, toLanguageCode } from '../translation/languages';
 import { stringOption } from './dispatch';
 
 type Interaction = APIChatInputApplicationCommandGuildInteraction;
@@ -22,7 +21,8 @@ const RESET_GUIDE = '/settings relay か /settings origin で設定し直して�
 
 // 保存済みの値や利用者の入力は検証を通っていない文字列かもしれないので、インラインコードを閉じる記号と改行を置き換える。
 // エスケープしないのは、インラインコードの中ではバックスラッシュが効かないため。
-const inlineCode = (value: string): string => `\`${value.replaceAll('`', "'").replaceAll(/[\r\n]/g, ' ')}\``;
+const sanitized = (value: string): string => value.replaceAll('`', "'").replaceAll(/[\r\n]/g, ' ');
+const inlineCode = (value: string): string => `\`${sanitized(value)}\``;
 
 // 保存済みの設定の誤りと直し方（docs/interface.md の「保存済みの設定の誤り」）。
 // /settings relay と /settings origin では、保存した後に残った誤りを成功の見出しの下に置くので、見出しとは分けて組み立てる。
@@ -116,18 +116,35 @@ type Check = { readonly ok: true } | { readonly ok: false; readonly reply: APIIn
 const ACCEPTED: Check = { ok: true };
 const rejected = (response: APIInteractionResponse): Check => ({ ok: false, reply: response });
 
-// storedPairsOnly は、ルートの隣り合う組のうち入力を含まない組だけで同じ言語が続いているかを返す。
-function check(settings: ChannelSettings, inputs: readonly string[], storedPairsOnly: (route: Route) => boolean): Check {
-	const route = toRoute(settings);
-	if (route.ok) return ACCEPTED;
-	if (route.error.kind === 'repeated_language') {
-		if (storedPairsOnly(route.error.route)) return ACCEPTED;
-		return rejected(errorReply(`同じ言語が続くルートは設定できません\n${codeBlock(formatRoute(route.error.route))}`));
-	}
-	const fromInput = new Set(inputs.map((input) => input.toLowerCase()));
-	const unsupported = route.error.codes.filter((code) => fromInput.has(code));
-	return unsupported.length > 0 ? rejected(unsupportedReply(unsupported)) : ACCEPTED;
+// 保存した後のルートの各位置の言語コードと、それが今回の入力かどうか。
+type Slot = { readonly code: string; readonly fromInput: boolean };
+
+// 保存済みの対応していないコードは検証を通っていない文字列かもしれないので、コードブロックに入れる前に整える。
+const displayedCode = (code: string): string => toLanguageCode(code) ?? sanitized(truncated(code.toLowerCase()));
+
+// toRoute で調べないのは、対応していないコードがあると続いているかを調べずに返すため。
+// 保存済みの側に対応していないコードがあると、入力どうしが続いていても見逃してしまう。
+function check(slots: readonly Slot[]): Check {
+	const unsupported = new Set(
+		slots.filter((slot) => slot.fromInput && toLanguageCode(slot.code) === undefined).map((slot) => slot.code.toLowerCase()),
+	);
+	if (unsupported.size > 0) return rejected(unsupportedReply([...unsupported]));
+
+	// 入力は対応言語だけになったので、対応していないコードと隣り合う組は続いていない。
+	const repeated = slots.some((slot, index) => {
+		const previous = slots[index - 1];
+		if (previous === undefined || !(slot.fromInput || previous.fromInput)) return false;
+		const lang = toLanguageCode(slot.code);
+		return lang !== undefined && lang === toLanguageCode(previous.code);
+	});
+	if (!repeated) return ACCEPTED;
+	return rejected(
+		errorReply(`同じ言語が続くルートは設定できません\n${codeBlock(slots.map(({ code }) => displayedCode(code)).join(' -> '))}`),
+	);
 }
+
+const storedSlot = (code: string): Slot => ({ code, fromInput: false });
+const inputSlot = (code: string): Slot => ({ code, fromInput: true });
 
 function storeFailed(interaction: Interaction, error: StoreError): APIInteractionResponse {
 	log({ event: 'd1.failed', operation: error.operation, ...interactionPlace(interaction), ...error.details });
@@ -184,26 +201,22 @@ export async function settingsRelay(interaction: Interaction, env: Env): Promise
 		interaction,
 		env,
 		'中継言語を設定しました',
-		// 中継言語を置き換えると、ルートの隣り合う組はどれも入力を含む。
-		(current) => check({ originLang: current.originLang, relayLangs: inputs }, inputs, () => false),
+		(current) => check([storedSlot(current.originLang), ...inputs.map(inputSlot), storedSlot(current.originLang)]),
 		(current) => writeRelayLangs(env.DB, interaction.channel.id, relayLangs, current),
 	);
 }
 
-// 原文の言語は両端にだけ現れるので、両端の組で続いていなければ、続いているのは保存済みの中継言語どうしである。
-const repeatedOnlyInRelay = (route: Route): boolean => route[1] !== route[0] && route.at(-2) !== route[0];
-
 export async function settingsOrigin(interaction: Interaction, env: Env): Promise<APIInteractionResponse> {
 	const inputs = splitCodes(stringOption(interaction, 'settings origin', 'lang') ?? '');
-	const [input] = inputs;
-	if (input === undefined) return errorReply('言語コードを入力してください');
+	const [lang] = inputs;
+	if (lang === undefined) return errorReply('言語コードを入力してください');
 	if (inputs.length > 1) return errorReply('原文の言語は1ヶ国語のみ入力してください');
 
 	return updateSettings(
 		interaction,
 		env,
 		'原文の言語を設定しました',
-		(current) => check({ originLang: input, relayLangs: current.relayLangs }, inputs, repeatedOnlyInRelay),
-		(current) => writeOriginLang(env.DB, interaction.channel.id, input.toLowerCase(), current),
+		(current) => check([inputSlot(lang), ...current.relayLangs.map(storedSlot), inputSlot(lang)]),
+		(current) => writeOriginLang(env.DB, interaction.channel.id, lang.toLowerCase(), current),
 	);
 }
