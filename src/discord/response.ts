@@ -60,6 +60,11 @@ export function settingsUnavailableReply(): APIInteractionResponseChannelMessage
 	return errorReply('設定の読み書きに失敗しました。時間をおいて試してください');
 }
 
+// /rt と /settings で同じ案内にする（docs/non-functional.md の「レート制限」）。
+export function rateLimitedReply(): APIInteractionResponseChannelMessageWithSource {
+	return errorReply('短時間に使いすぎています。1分ほど待ってから試してください');
+}
+
 export function codeBlock(content: string): string {
 	return `\`\`\`${content}\`\`\``;
 }

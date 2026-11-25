@@ -10,7 +10,7 @@ import {
 	type RESTPatchAPIWebhookWithTokenMessageJSONBody,
 } from 'discord-api-types/v10';
 import { editOriginal, type FollowupTarget } from '../discord/followup';
-import { errorMessage, errorReply } from '../discord/response';
+import { errorMessage, errorReply, rateLimitedReply } from '../discord/response';
 import type { TranslationErrorKind } from '../errors';
 import { errorDetails, interactionPlace, log, type Place } from '../log';
 import { formatRoute, toRoute } from '../settings/route';
@@ -31,7 +31,6 @@ export type RtDeps = {
 
 const MESSAGES = {
 	emptyText: '文章を入力してください',
-	rateLimited: '短時間に使いすぎています。1分ほど待ってから試してください',
 	quotaExceeded: '今日の翻訳の上限に達しました。日本時間 9:00（00:00 UTC）以降に試してください',
 	failed: '翻訳に失敗しました。時間をおいて試してください',
 } as const;
@@ -198,7 +197,7 @@ export async function retranslate(
 	const { success } = await deps.rateLimiter.limit({ key: interaction.member.user.id });
 	if (!success) {
 		log({ event: 'rt.rate_limited' });
-		return errorReply(MESSAGES.rateLimited);
+		return rateLimitedReply();
 	}
 
 	// 翻訳は Discord の応答期限（3秒）に間に合わないので、遅延応答を返してから続ける。
