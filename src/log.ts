@@ -169,6 +169,11 @@ export const logEvents = {
 		description: '設定を読んでから書くまでに他の人が設定を変え続け、書き込みを諦めて利用者にエラーを表示した',
 		fields: { ...placeFields },
 	},
+	'settings.rate_limited': {
+		level: 'log',
+		description: '/settings relay か /settings origin をレート制限で断った',
+		fields: {},
+	},
 	'settings.invalid': {
 		level: 'error',
 		description: '保存済みの設定から中継ルートを組み立てられず、利用者にエラーを表示した',

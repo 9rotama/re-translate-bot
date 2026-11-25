@@ -19,6 +19,7 @@
 | `followup.failed` | `error` | 遅延応答の後に元のメッセージを編集できなかった |
 | `d1.failed` | `error` | D1 の読み書きに失敗した |
 | `settings.conflict` | `warn` | 設定を読んでから書くまでに他の人が設定を変え続け、書き込みを諦めて利用者にエラーを表示した |
+| `settings.rate_limited` | `log` | /settings relay か /settings origin をレート制限で断った |
 | `settings.invalid` | `error` | 保存済みの設定から中継ルートを組み立てられず、利用者にエラーを表示した |
 | `unhandled_error` | `error` | 想定していない例外を最も外側で捕まえた |
 
@@ -149,6 +150,12 @@ D1 の読み書きに失敗した。レベルは `error`。
 | --- | --- | --- |
 | `guildId` | ギルド ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
 | `channelId` | チャンネル ID。分からないときは出さない | Discord の ID（17〜20桁の数字の文字列） |
+
+## `settings.rate_limited`
+
+/settings relay か /settings origin をレート制限で断った。レベルは `log`。
+
+`event` 以外の値は持たない。
 
 ## `settings.invalid`
 

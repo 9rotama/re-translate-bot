@@ -5,6 +5,7 @@ import {
 	containerMessage,
 	errorMessage,
 	errorReply,
+	rateLimitedReply,
 	reply,
 	settingsUnavailableReply,
 	type ContainerMessage,
@@ -175,6 +176,14 @@ async function updateSettings(
 	checkInput: (current: ChannelSettings) => Check,
 	write: (current: ChannelSettings) => Promise<WriteResult>,
 ): Promise<APIInteractionResponse> {
+	// D1 を読む前に数える。読み書きの回数を抑えるのが目的なので、D1 に触れない入力の誤りは数えない。
+	// relay と origin でカウンタを分けないのは、交互に呼べば上限の2倍まで書き換えられてしまうため。
+	const { success } = await env.SETTINGS_RATE_LIMITER.limit({ key: interaction.member.user.id });
+	if (!success) {
+		log({ event: 'settings.rate_limited' });
+		return rateLimitedReply();
+	}
+
 	for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt += 1) {
 		const current = await readSettings(env.DB, interaction.channel.id);
 		if (!current.ok) return storeFailed(interaction, current.error);

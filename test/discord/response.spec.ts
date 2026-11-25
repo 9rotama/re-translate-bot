@@ -1,6 +1,14 @@
 import { ComponentType, InteractionResponseType, MessageFlags, SeparatorSpacingSize } from 'discord-api-types/v10';
 import { describe, expect, it } from 'vitest';
-import { codeBlock, containerMessage, errorMessage, errorReply, reply, settingsUnavailableReply } from '../../src/discord/response';
+import {
+	codeBlock,
+	containerMessage,
+	errorMessage,
+	errorReply,
+	rateLimitedReply,
+	reply,
+	settingsUnavailableReply,
+} from '../../src/discord/response';
 
 const textDisplay = (content: string) => ({ type: ComponentType.TextDisplay, content });
 const divider = { type: ComponentType.Separator, divider: true, spacing: SeparatorSpacingSize.Small };
@@ -70,6 +78,17 @@ describe('errorReply', () => {
 				allowed_mentions: { parse: [] },
 			},
 		});
+	});
+});
+
+describe('rateLimitedReply', () => {
+	it('時間をおいて試すよう、呼び出した本人だけに案内する', () => {
+		const response = rateLimitedReply();
+
+		expect(response.data.flags).toBe(MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral);
+		expect(response.data.components).toEqual(
+			container(textDisplay('### エラー\n短時間に使いすぎています。1分ほど待ってから試してください')),
+		);
 	});
 });
 

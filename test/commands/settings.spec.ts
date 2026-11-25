@@ -129,13 +129,30 @@ describe('invalidSettingsMessage', () => {
 	});
 });
 
-function interaction(command: string, name: string, value: string, channelId: string): APIChatInputApplicationCommandGuildInteraction {
+// レート制限のカウンタはテストの間で消えないので、レート制限を確かめるテスト以外は呼び出しごとに別のユーザーにする。
+let nextUser = 500000000000000000n;
+const newUserId = () => String(nextUser++);
+
+function interaction(
+	command: string,
+	name: string,
+	value: string,
+	channelId: string,
+	userId: string,
+): APIChatInputApplicationCommandGuildInteraction {
 	const base = commandInteraction('settings', subcommand(command, [{ type: ApplicationCommandOptionType.String, name, value }]));
-	return { ...base, channel: { id: channelId, type: ChannelType.GuildText }, channel_id: channelId };
+	return {
+		...base,
+		channel: { id: channelId, type: ChannelType.GuildText },
+		channel_id: channelId,
+		member: { ...base.member, user: { ...base.member.user, id: userId } },
+	};
 }
 
-const relay = (langs: string, channelId: string) => settingsRelay(interaction('relay', 'langs', langs, channelId), env);
-const origin = (lang: string, channelId: string) => settingsOrigin(interaction('origin', 'lang', lang, channelId), env);
+const relay = (langs: string, channelId: string, userId = newUserId()) =>
+	settingsRelay(interaction('relay', 'langs', langs, channelId, userId), env);
+const origin = (lang: string, channelId: string, userId = newUserId()) =>
+	settingsOrigin(interaction('origin', 'lang', lang, channelId, userId), env);
 
 // Container の中の唯一の TextDisplay の文字列を取り出す。
 function textOf(response: APIInteractionResponse): string {
@@ -581,5 +598,55 @@ describe('/settings origin', () => {
 
 			expect(textOf(response)).toBe('### 中継言語を設定しました\n```ja -> en -> ja```');
 		});
+	});
+});
+
+describe('/settings relay と /settings origin のレート制限', () => {
+	const spies = spyConsole();
+	const RATE_LIMITED = '### エラー\n短時間に使いすぎています。1分ほど待ってから試してください';
+
+	it('同じユーザーの6回目の呼び出しは、設定を変えずに本人だけにエラーを見せ、settings.rate_limited を記録する', async () => {
+		const userId = newUserId();
+		const channelId = newChannelId();
+		for (let i = 0; i < 5; i++) await relay('en', channelId, userId);
+
+		const response = await relay('fr', channelId, userId);
+
+		expect(textOf(response)).toBe(RATE_LIMITED);
+		expect(isEphemeral(response)).toBe(true);
+		expect(await settingsOf(channelId)).toMatchObject({ relayLangs: ['en'] });
+		expect(spies.log).toHaveBeenCalledWith({ event: 'settings.rate_limited' });
+	});
+
+	it('/settings relay と /settings origin の回数は合わせて数える', async () => {
+		const userId = newUserId();
+		const channelId = newChannelId();
+		for (let i = 0; i < 5; i++) await relay('en', channelId, userId);
+
+		const response = await origin('ko', channelId, userId);
+
+		expect(textOf(response)).toBe(RATE_LIMITED);
+		expect(await settingsOf(channelId)).toMatchObject({ originLang: 'ja' });
+	});
+
+	it('回数はユーザーごとに数える', async () => {
+		const channelId = newChannelId();
+		for (let i = 0; i < 5; i++) await relay('en', channelId, newUserId());
+
+		const response = await relay('fr', channelId, newUserId());
+
+		expect(isEphemeral(response)).toBe(false);
+		expect(await settingsOf(channelId)).toMatchObject({ relayLangs: ['fr'] });
+	});
+
+	it('D1 を読む前に断る入力の誤りは、回数に数えない', async () => {
+		const userId = newUserId();
+		const channelId = newChannelId();
+		for (let i = 0; i < 5; i++) await relay(' ', channelId, userId);
+
+		const response = await relay('fr', channelId, userId);
+
+		expect(isEphemeral(response)).toBe(false);
+		expect(await settingsOf(channelId)).toMatchObject({ relayLangs: ['fr'] });
 	});
 });
